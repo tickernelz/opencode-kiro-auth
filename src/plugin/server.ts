@@ -42,16 +42,12 @@ function parseQueryParams(url: string): Record<string, string> {
   const params: Record<string, string> = {};
   
   try {
-    const parsed = parseUrl(url, true);
-    const query = parsed.query;
+    const parsed = new URL(url, 'http://localhost');
+    const query = parsed.searchParams;
     
-    for (const [key, value] of Object.entries(query)) {
-      if (typeof value === 'string') {
-        params[key] = value;
-      } else if (Array.isArray(value) && value.length > 0) {
-        params[key] = value[0] as string;
-      }
-    }
+    query.forEach((value, key) => {
+      params[key] = value;
+    });
   } catch (error) {
     logger.error('Failed to parse query params', error);
   }
@@ -269,7 +265,7 @@ export async function startSocialAuthServer(port: number = DEFAULT_PORT): Promis
   });
 }
 
-export async function startIDCAuthServer(
+export function startIDCAuthServer(
   authData: IDCAuthData,
   port: number = 19847
 ): Promise<{
@@ -375,8 +371,8 @@ export async function startIDCAuthServer(
       reject(error);
     });
     
-    server.listen(port, 'localhost', () => {
-      const url = `http://localhost:${port}`;
+    server.listen(port, '127.0.0.1', () => {
+      const url = `http://127.0.0.1:${port}`;
       logger.log('IDC auth server started', { url });
       
       timeoutId = setTimeout(() => {
