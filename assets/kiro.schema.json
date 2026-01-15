@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "quiet_mode": {
+      "type": "boolean",
+      "default": false,
+      "description": "Suppress most toast notifications"
+    },
+    "debug": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enable debug logging to file"
+    },
+    "session_recovery": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable automatic session recovery from errors"
+    },
+    "auto_resume": {
+      "type": "boolean",
+      "default": true,
+      "description": "Automatically send a continue prompt after successful recovery"
+    },
+    "max_recovery_attempts": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 3,
+      "description": "Maximum number of recovery attempts before giving up"
+    },
+    "proactive_token_refresh": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable proactive background token refresh"
+    },
+    "token_refresh_interval_seconds": {
+      "type": "number",
+      "minimum": 60,
+      "maximum": 3600,
+      "default": 300,
+      "description": "Interval between proactive refresh checks in seconds"
+    },
+    "token_refresh_buffer_seconds": {
+      "type": "number",
+      "minimum": 60,
+      "maximum": 1800,
+      "default": 600,
+      "description": "Seconds before token expiry to trigger proactive refresh"
+    },
+    "account_selection_strategy": {
+      "type": "string",
+      "enum": ["sticky", "round-robin"],
+      "default": "sticky",
+      "description": "Strategy for selecting accounts when making requests"
+    },
+    "thinking_enabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enable extended thinking mode for Claude models"
+    },
+    "thinking_budget_tokens": {
+      "type": "number",
+      "minimum": 1000,
+      "maximum": 24576,
+      "default": 20000,
+      "description": "Token budget for thinking blocks"
+    },
+    "default_region": {
+      "type": "string",
+      "enum": ["us-east-1", "us-west-2"],
+      "default": "us-east-1",
+      "description": "Default AWS region for Bedrock requests"
+    },
+    "request_timeout_ms": {
+      "type": "number",
+      "minimum": 10000,
+      "maximum": 300000,
+      "default": 120000,
+      "description": "Request timeout in milliseconds"
+    },
+    "rate_limit_retry_delay_ms": {
+      "type": "number",
+      "minimum": 1000,
+      "maximum": 60000,
+      "default": 5000,
+      "description": "Delay in milliseconds between rate limit retries"
+    },
+    "rate_limit_max_retries": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10,
+      "default": 3,
+      "description": "Maximum number of retries when rate limited"
+    },
+    "quota_warning_threshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "default": 0.8,
+      "description": "Threshold for quota warning notifications (0.0 to 1.0)"
+    },
+    "usage_tracking_enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable usage tracking and quota monitoring"
+    },
+    "usage_fetch_interval_seconds": {
+      "type": "number",
+      "minimum": 60,
+      "maximum": 3600,
+      "default": 300,
+      "description": "Interval between usage data fetches in seconds"
+    }
+  }
+}

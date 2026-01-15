@@ -1,0 +1,26 @@
+{
+  "name": "opencode-kiro-auth",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@openauthjs/openauth": "^0.4.3",
+    "proper-lockfile": "^4.1.2",
+    "xdg-basedir": "^5.1.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^0.15.30",
+    "@types/node": "^24.10.1",
+    "@types/proper-lockfile": "^4.1.4",
+    "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run build"
+  }
+}
