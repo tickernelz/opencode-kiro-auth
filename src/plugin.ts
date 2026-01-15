@@ -210,34 +210,40 @@ export const createKiroPlugin = (providerId: string) => async (
                   const text = await response.text();
                   const parsed = parseEventStream(text);
 
-                  const claudeResponse: any = {
+                  const openaiResponse: any = {
                     id: prepared.conversationId,
-                    type: 'message',
-                    role: 'assistant',
+                    object: 'chat.completion',
+                    created: Math.floor(Date.now() / 1000),
                     model: model,
-                    content: [
-                      { type: 'text', text: parsed.content }
+                    choices: [
+                      {
+                        index: 0,
+                        message: {
+                          role: 'assistant',
+                          content: parsed.content,
+                        },
+                        finish_reason: parsed.stopReason === 'tool_use' ? 'tool_calls' : 'stop',
+                      }
                     ],
                     usage: {
-                      input_tokens: parsed.inputTokens || 0,
-                      output_tokens: parsed.outputTokens || 0,
+                      prompt_tokens: parsed.inputTokens || 0,
+                      completion_tokens: parsed.outputTokens || 0,
+                      total_tokens: (parsed.inputTokens || 0) + (parsed.outputTokens || 0),
                     },
-                    stop_reason: parsed.stopReason || 'end_turn',
                   };
 
                   if (parsed.toolCalls.length > 0) {
-                    claudeResponse.content.push(
-                      ...parsed.toolCalls.map(tc => ({
-                        type: 'tool_use',
-                        id: tc.toolUseId,
+                    openaiResponse.choices[0].message.tool_calls = parsed.toolCalls.map((tc, index) => ({
+                      id: tc.toolUseId,
+                      type: 'function',
+                      function: {
                         name: tc.name,
-                        input: typeof tc.input === 'string' ? JSON.parse(tc.input) : tc.input,
-                      }))
-                    );
-                    claudeResponse.stop_reason = 'tool_use';
+                        arguments: typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input),
+                      },
+                    }));
                   }
 
-                  return new Response(JSON.stringify(claudeResponse), {
+                  return new Response(JSON.stringify(openaiResponse), {
                     headers: { 'Content-Type': 'application/json' }
                   });
                 }

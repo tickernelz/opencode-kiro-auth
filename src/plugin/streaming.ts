@@ -33,7 +33,7 @@ export async function* transformKiroStream(
   response: Response,
   model: string,
   conversationId: string
-): AsyncGenerator<StreamEvent> {
+): AsyncGenerator<any> {
   const thinkingRequested = true;
   
   const streamState: StreamState = {
@@ -45,23 +45,6 @@ export async function* transformKiroStream(
     textBlockIndex: null,
     nextBlockIndex: 0,
     stoppedBlocks: new Set()
-  };
-
-  yield {
-    type: 'message_start',
-    message: {
-      id: conversationId,
-      type: 'message',
-      role: 'assistant',
-      model: model,
-      usage: {
-        input_tokens: 0,
-        output_tokens: 0,
-        cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0
-      },
-      content: []
-    }
   };
 
   if (!response.body) {
@@ -97,7 +80,9 @@ export async function* transformKiroStream(
           totalContent += event.data;
 
           if (!thinkingRequested) {
-            yield* createTextDeltaEvents(event.data, streamState);
+            for (const ev of createTextDeltaEvents(event.data, streamState)) {
+              yield convertToOpenAI(ev, conversationId, model);
+            }
             continue;
           }
 
@@ -172,7 +157,7 @@ export async function* transformKiroStream(
           }
 
           for (const ev of deltaEvents) {
-            yield ev;
+            yield convertToOpenAI(ev, conversationId, model);
           }
         } else if (event.type === 'toolUse') {
           const tc = event.data;
@@ -225,20 +210,17 @@ export async function* transformKiroStream(
 
     if (thinkingRequested && streamState.buffer) {
       if (streamState.inThinking) {
-        yield* createThinkingDeltaEvents(streamState.buffer, streamState);
+        for (const ev of createThinkingDeltaEvents(streamState.buffer, streamState)) yield convertToOpenAI(ev, conversationId, model);
         streamState.buffer = '';
-        yield* createThinkingDeltaEvents('', streamState);
-        yield* stopBlock(streamState.thinkingBlockIndex, streamState);
-      } else if (!streamState.thinkingExtracted) {
-        yield* createTextDeltaEvents(streamState.buffer, streamState);
-        streamState.buffer = '';
+        for (const ev of createThinkingDeltaEvents('', streamState)) yield convertToOpenAI(ev, conversationId, model);
+        for (const ev of stopBlock(streamState.thinkingBlockIndex, streamState)) yield convertToOpenAI(ev, conversationId, model);
       } else {
-        yield* createTextDeltaEvents(streamState.buffer, streamState);
+        for (const ev of createTextDeltaEvents(streamState.buffer, streamState)) yield convertToOpenAI(ev, conversationId, model);
         streamState.buffer = '';
       }
     }
 
-    yield* stopBlock(streamState.textBlockIndex, streamState);
+    for (const ev of stopBlock(streamState.textBlockIndex, streamState)) yield convertToOpenAI(ev, conversationId, model);
 
     const bracketToolCalls = parseBracketToolCalls(totalContent);
     if (bracketToolCalls.length > 0) {
@@ -259,7 +241,7 @@ export async function* transformKiroStream(
         
         const blockIndex = baseIndex + i;
 
-        yield {
+        yield convertToOpenAI({
           type: 'content_block_start',
           index: blockIndex,
           content_block: {
@@ -268,7 +250,7 @@ export async function* transformKiroStream(
             name: tc.name,
             input: {}
           }
-        };
+        }, conversationId, model);
 
         let inputJson: string;
         try {
@@ -278,16 +260,16 @@ export async function* transformKiroStream(
           inputJson = tc.input;
         }
 
-        yield {
+        yield convertToOpenAI({
           type: 'content_block_delta',
           index: blockIndex,
           delta: {
             type: 'input_json_delta',
             partial_json: inputJson
           }
-        };
+        }, conversationId, model);
 
-        yield { type: 'content_block_stop', index: blockIndex };
+        yield convertToOpenAI({ type: 'content_block_stop', index: blockIndex }, conversationId, model);
       }
     }
 
@@ -298,7 +280,7 @@ export async function* transformKiroStream(
       inputTokens = Math.max(0, totalTokens - outputTokens);
     }
 
-    yield {
+    yield convertToOpenAI({
       type: 'message_delta',
       delta: { stop_reason: toolCalls.length > 0 ? 'tool_use' : 'end_turn' },
       usage: {
@@ -307,13 +289,76 @@ export async function* transformKiroStream(
         cache_creation_input_tokens: 0,
         cache_read_input_tokens: 0
       }
-    };
+    }, conversationId, model);
 
-    yield { type: 'message_stop' };
+    yield convertToOpenAI({ type: 'message_stop' }, conversationId, model);
 
   } finally {
     reader.releaseLock();
   }
+}
+
+function convertToOpenAI(event: StreamEvent, id: string, model: string): any {
+  const base = {
+    id,
+    object: 'chat.completion.chunk',
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [] as any[]
+  };
+
+  if (event.type === 'content_block_delta') {
+    if (event.delta.type === 'text_delta') {
+      base.choices.push({
+        index: 0,
+        delta: { content: event.delta.text },
+        finish_reason: null
+      });
+    } else if (event.delta.type === 'thinking_delta') {
+      base.choices.push({
+        index: 0,
+        delta: { reasoning_content: event.delta.thinking },
+        finish_reason: null
+      });
+    } else if (event.delta.type === 'input_json_delta') {
+      base.choices.push({
+        index: 0,
+        delta: {
+          tool_calls: [{
+            index: event.index,
+            function: { arguments: event.delta.partial_json }
+          }]
+        },
+        finish_reason: null
+      });
+    }
+  } else if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+    base.choices.push({
+      index: 0,
+      delta: {
+        tool_calls: [{
+          index: event.index,
+          id: event.content_block.id,
+          type: 'function',
+          function: { name: event.content_block.name, arguments: '' }
+        }]
+      },
+      finish_reason: null
+    });
+  } else if (event.type === 'message_delta') {
+    base.choices.push({
+      index: 0,
+      delta: {},
+      finish_reason: event.delta.stop_reason === 'tool_use' ? 'tool_calls' : 'stop'
+    });
+    (base as any).usage = {
+      prompt_tokens: event.usage?.input_tokens || 0,
+      completion_tokens: event.usage?.output_tokens || 0,
+      total_tokens: (event.usage?.input_tokens || 0) + (event.usage?.output_tokens || 0)
+    };
+  }
+
+  return base;
 }
 
 function parseStreamBuffer(buffer: string): { events: any[], remaining: string } {

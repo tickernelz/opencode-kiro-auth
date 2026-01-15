@@ -61,20 +61,17 @@ export function transformToCodeWhisperer(
     }
   }
 
-  let processedMessages = [...messages];
+  let processedMessages = mergeAdjacentMessages([...messages]);
 
-  const lastMessage = processedMessages[processedMessages.length - 1];
-  if (lastMessage?.role === 'assistant') {
-    const content = getContentText(lastMessage);
+  const lastMsg = processedMessages[processedMessages.length - 1];
+  if (lastMsg?.role === 'assistant') {
+    const content = getContentText(lastMsg);
     if (content === '{') {
       processedMessages.pop();
     }
   }
 
-  processedMessages = mergeAdjacentMessages(processedMessages);
-
   const codewhispererTools = tools ? convertToolsToCodeWhisperer(tools) : [];
-
   const history: CodeWhispererMessage[] = [];
   let startIndex = 0;
 
@@ -145,27 +142,17 @@ export function transformToCodeWhisperer(
         userInputMessage.content = getContentText(message);
       }
 
-      if (images.length > 0) {
-        userInputMessage.images = images;
-      }
-
+      if (images.length > 0) userInputMessage.images = images;
       if (imageCount > 0) {
-        const imagePlaceholder = `[此消息包含 ${imageCount} 张图片，已在历史记录中省略]`;
-        userInputMessage.content = userInputMessage.content
-          ? `${userInputMessage.content}\n${imagePlaceholder}`
-          : imagePlaceholder;
+        const placeholder = `[此消息包含 ${imageCount} 张图片，已在历史记录中省略]`;
+        userInputMessage.content = userInputMessage.content ? `${userInputMessage.content}\n${placeholder}` : placeholder;
       }
-
       if (toolResults.length > 0) {
-        const uniqueToolResults = deduplicateToolResults(toolResults);
-        userInputMessage.userInputMessageContext = { toolResults: uniqueToolResults };
+        userInputMessage.userInputMessageContext = { toolResults: deduplicateToolResults(toolResults) };
       }
-
       history.push({ userInputMessage });
     } else if (message.role === 'assistant') {
-      const assistantResponseMessage: any = {
-        content: ''
-      };
+      const assistantResponseMessage: any = { content: '' };
       const toolUses: any[] = [];
       let thinkingText = '';
 
@@ -192,29 +179,20 @@ export function transformToCodeWhisperer(
           ? `<thinking>${thinkingText}</thinking>\n\n${assistantResponseMessage.content}`
           : `<thinking>${thinkingText}</thinking>`;
       }
-
-      if (toolUses.length > 0) {
-        assistantResponseMessage.toolUses = toolUses;
-      }
-
+      if (toolUses.length > 0) assistantResponseMessage.toolUses = toolUses;
       history.push({ assistantResponseMessage });
     }
   }
 
   const currentMessage = processedMessages[processedMessages.length - 1];
-  if (!currentMessage) {
-    throw new Error('No current message found');
-  }
+  if (!currentMessage) throw new Error('No current message found');
   
   let currentContent = '';
   const currentToolResults: any[] = [];
   const currentImages: any[] = [];
 
   if (currentMessage.role === 'assistant') {
-    const assistantResponseMessage: any = {
-      content: ''
-    };
-    const toolUses: any[] = [];
+    const assistantResponseMessage: any = { content: '' };
     let thinkingText = '';
 
     if (Array.isArray(currentMessage.content)) {
@@ -224,7 +202,8 @@ export function transformToCodeWhisperer(
         } else if (part.type === 'thinking') {
           thinkingText += (part.thinking || part.text || '');
         } else if (part.type === 'tool_use') {
-          toolUses.push({
+          if (!assistantResponseMessage.toolUses) assistantResponseMessage.toolUses = [];
+          assistantResponseMessage.toolUses.push({
             input: part.input,
             name: part.name,
             toolUseId: part.id
@@ -240,22 +219,13 @@ export function transformToCodeWhisperer(
         ? `<thinking>${thinkingText}</thinking>\n\n${assistantResponseMessage.content}`
         : `<thinking>${thinkingText}</thinking>`;
     }
-
-    if (toolUses.length > 0) {
-      assistantResponseMessage.toolUses = toolUses;
-    }
-
     history.push({ assistantResponseMessage });
     currentContent = 'Continue';
   } else {
     if (history.length > 0) {
       const lastHistoryItem = history[history.length - 1];
       if (lastHistoryItem && !lastHistoryItem.assistantResponseMessage) {
-        history.push({
-          assistantResponseMessage: {
-            content: 'Continue'
-          }
-        });
+        history.push({ assistantResponseMessage: { content: 'Continue' } });
       }
     }
 
@@ -273,9 +243,7 @@ export function transformToCodeWhisperer(
           if (part.source) {
             currentImages.push({
               format: part.source.media_type?.split('/')[1] || 'png',
-              source: {
-                bytes: part.source.data
-              }
+              source: { bytes: part.source.data }
             });
           }
         }
@@ -293,7 +261,7 @@ export function transformToCodeWhisperer(
     conversationState: {
       chatTriggerType: KIRO_CONSTANTS.CHAT_TRIGGER_TYPE_MANUAL,
       conversationId: conversationId,
-      history: history.length > 0 ? history : [],
+      history: history,
       currentMessage: {
         userInputMessage: {
           content: currentContent,
@@ -304,27 +272,22 @@ export function transformToCodeWhisperer(
     }
   };
 
-  if (history.length === 0) {
-    delete (request.conversationState as any).history;
+  if (history.length > 0) {
+    request.conversationState.history = history;
   }
 
   const userInputMessage = request.conversationState.currentMessage.userInputMessage!;
+  if (currentImages.length > 0) userInputMessage.images = currentImages;
 
-  if (currentImages.length > 0) {
-    userInputMessage.images = currentImages;
-  }
-
-  const userInputMessageContext: any = {};
+  const ctx: any = {};
   if (currentToolResults.length > 0) {
-    const uniqueToolResults = deduplicateToolResults(currentToolResults);
-    userInputMessageContext.toolResults = uniqueToolResults;
+    ctx.toolResults = deduplicateToolResults(currentToolResults);
   }
   if (codewhispererTools.length > 0) {
-    userInputMessageContext.tools = codewhispererTools;
+    ctx.tools = codewhispererTools;
   }
-
-  if (Object.keys(userInputMessageContext).length > 0) {
-    userInputMessage.userInputMessageContext = userInputMessageContext;
+  if (Object.keys(ctx).length > 0) {
+    userInputMessage.userInputMessageContext = ctx;
   }
 
   if (auth.authMethod === 'social' && auth.profileArn) {
@@ -333,9 +296,6 @@ export function transformToCodeWhisperer(
 
   const region = auth.region || 'us-east-1';
   const finalUrl = KIRO_CONSTANTS.BASE_URL.replace('{{region}}', region);
-  if (!finalUrl || !finalUrl.startsWith('https://')) {
-    throw new Error(`Invalid URL constructed: ${finalUrl}`);
-  }
   const machineId = generateMachineId(auth);
   const userAgent = buildUserAgent(machineId);
 
@@ -345,10 +305,14 @@ export function transformToCodeWhisperer(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
         'Authorization': `Bearer ${auth.access}`,
+        'amz-sdk-invocation-id': crypto.randomUUID(),
+        'amz-sdk-request': 'attempt=1; max=1',
         'x-amzn-kiro-agent-mode': 'vibe',
-        'x-amz-user-agent': `aws-sdk-js/1.0.0 ${userAgent}`,
-        'user-agent': userAgent
+        'x-amz-user-agent': `aws-sdk-js/1.0.0 KiroIDE-${KIRO_CONSTANTS.KIRO_VERSION}-${machineId}`,
+        'user-agent': userAgent,
+        'Connection': 'close'
       },
       body: JSON.stringify(request)
     },
@@ -387,26 +351,30 @@ export function mergeAdjacentMessages(messages: OpenAIMessage[]): OpenAIMessage[
   return merged;
 }
 
-export function convertToolsToCodeWhisperer(tools: OpenAITool[]): any[] {
+export function convertToolsToCodeWhisperer(tools: any[]): any[] {
   const MAX_DESCRIPTION_LENGTH = 9216;
 
   const filteredTools = tools.filter(tool => {
-    const name = (tool.name || '').toLowerCase();
+    const name = (tool.name || tool.function?.name || '').toLowerCase();
     return name !== 'web_search' && name !== 'websearch';
   });
 
   return filteredTools.map(tool => {
-    let desc = tool.description || '';
+    const name = tool.name || tool.function?.name;
+    const description = tool.description || tool.function?.description || '';
+    const parameters = tool.input_schema || tool.function?.parameters || {};
+    
+    let desc = description;
     if (desc.length > MAX_DESCRIPTION_LENGTH) {
       desc = desc.substring(0, MAX_DESCRIPTION_LENGTH) + '...';
     }
 
     return {
       toolSpecification: {
-        name: tool.name,
+        name,
         description: desc,
         inputSchema: {
-          json: tool.input_schema || {}
+          json: parameters
         }
       }
     };
@@ -438,16 +406,22 @@ export function extractImagesFromContent(content: any): { text: string; images: 
 }
 
 export function buildUserAgent(machineId: string): string {
-  const platform = os.platform();
+  const osPlatform = os.platform();
+  const osRelease = os.release();
   const nodeVersion = process.version.replace('v', '');
-  const arch = os.arch();
+  const kiroVersion = KIRO_CONSTANTS.KIRO_VERSION;
+  
+  let osName: string = osPlatform;
+  if (osPlatform === 'win32') osName = `windows#${osRelease}`;
+  else if (osPlatform === 'darwin') osName = `macos#${osRelease}`;
+  else osName = `${osPlatform}#${osRelease}`;
 
-  return `KiroIDE-${KIRO_CONSTANTS.KIRO_VERSION}-${machineId} ua/2.1 os/${platform} lang/js md/nodejs#${nodeVersion} api/codewhisperer#1.0.0 exec-env/${arch}`;
+  return `aws-sdk-js/1.0.0 ua/2.1 os/${osName} lang/js md/nodejs#${nodeVersion} api/codewhispererruntime#1.0.0 m/E KiroIDE-${kiroVersion}-${machineId}`;
 }
 
 export function generateMachineId(auth: KiroAuthDetails): string {
-  const source = auth.profileArn || auth.clientId || 'default';
-  return crypto.createHash('sha256').update(source).digest('hex').substring(0, 16);
+  const uniqueKey = auth.profileArn || auth.clientId || "KIRO_DEFAULT_MACHINE";
+  return crypto.createHash('sha256').update(uniqueKey).digest('hex');
 }
 
 function getContentText(message: any): string {
