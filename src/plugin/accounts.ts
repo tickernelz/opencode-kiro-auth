@@ -21,6 +21,7 @@ export class AccountManager {
   private cursor: number
   private strategy: AccountSelectionStrategy
   private lastToastTime = 0
+  private lastUsageToastTime = 0
 
   constructor(
     accounts: ManagedAccount[],
@@ -61,6 +62,12 @@ export class AccountManager {
   shouldShowToast(debounce = 30000): boolean {
     if (Date.now() - this.lastToastTime < debounce) return false
     this.lastToastTime = Date.now()
+    return true
+  }
+
+  shouldShowUsageToast(debounce = 30000): boolean {
+    if (Date.now() - this.lastUsageToastTime < debounce) return false
+    this.lastUsageToastTime = Date.now()
     return true
   }
 

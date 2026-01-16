@@ -20,6 +20,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const isNetworkError = (e: any) =>
   e instanceof Error && /econnreset|etimedout|enotfound|network|fetch failed/i.test(e.message)
 const extractModel = (url: string) => url.match(/models\/([^/:]+)/)?.[1] || null
+const formatUsageMessage = (usedCount: number, limitCount: number, email: string): string => {
+  if (limitCount > 0) {
+    const percentage = Math.round((usedCount / limitCount) * 100)
+    return `Usage (${email}): ${usedCount}/${limitCount} (${percentage}%)`
+  }
+  return `Usage (${email}): ${usedCount}`
+}
 
 export const createKiroPlugin =
   (id: string) =>
@@ -70,6 +77,19 @@ export const createKiroPlugin =
                     `Using ${acc.email} (${am.getAccounts().indexOf(acc) + 1}/${count})`,
                     'info'
                   )
+
+                if (
+                  am.shouldShowUsageToast() &&
+                  acc.usedCount !== undefined &&
+                  acc.limitCount !== undefined
+                ) {
+                  const percentage = acc.limitCount > 0 ? (acc.usedCount / acc.limitCount) * 100 : 0
+                  const variant = percentage >= 80 ? 'warning' : 'info'
+                  showToast(
+                    formatUsageMessage(acc.usedCount, acc.limitCount, acc.realEmail || acc.email),
+                    variant
+                  )
+                }
 
                 let auth = am.toAuthDetails(acc)
                 if (accessTokenExpired(auth)) {
