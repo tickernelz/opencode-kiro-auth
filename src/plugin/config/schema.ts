@@ -27,7 +27,9 @@ export const KiroConfigSchema = z.object({
 
   rate_limit_max_retries: z.number().min(0).max(10).default(3),
 
-  usage_tracking_enabled: z.boolean().default(true)
+  usage_tracking_enabled: z.boolean().default(true),
+
+  enable_log_api_request: z.boolean().default(false)
 })
 
 export type KiroConfig = z.infer<typeof KiroConfigSchema>
@@ -42,5 +44,6 @@ export const DEFAULT_CONFIG: KiroConfig = {
   default_region: 'us-east-1',
   rate_limit_retry_delay_ms: 5000,
   rate_limit_max_retries: 3,
-  usage_tracking_enabled: true
+  usage_tracking_enabled: true,
+  enable_log_api_request: false
 }

@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from 'node:fs'
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -22,6 +22,17 @@ const writeToFile = (level: string, message: string, ...args: unknown[]) => {
   } catch (e) {}
 }
 
+const writeApiLog = (type: 'request' | 'response', data: any, timestamp: string) => {
+  try {
+    const dir = getLogDir()
+    mkdirSync(dir, { recursive: true })
+    const filename = `${timestamp}_${type}.json`
+    const path = join(dir, filename)
+    const content = JSON.stringify(data, null, 2)
+    writeFileSync(path, content)
+  } catch (e) {}
+}
+
 export function log(message: string, ...args: unknown[]): void {
   writeToFile('INFO', message, ...args)
 }
@@ -38,4 +49,16 @@ export function debug(message: string, ...args: unknown[]): void {
   if (process.env.DEBUG) {
     writeToFile('DEBUG', message, ...args)
   }
+}
+
+export function logApiRequest(data: any, timestamp: string): void {
+  writeApiLog('request', data, timestamp)
+}
+
+export function logApiResponse(data: any, timestamp: string): void {
+  writeApiLog('response', data, timestamp)
+}
+
+export function getTimestamp(): string {
+  return new Date().toISOString().replace(/[:.]/g, '-')
 }

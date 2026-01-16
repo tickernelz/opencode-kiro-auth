@@ -91,8 +91,53 @@ export const createKiroPlugin =
                 }
 
                 const prep = transformToCodeWhisperer(url, init?.body, model, auth, think, budget)
+                
+                const apiTimestamp = config.enable_log_api_request ? logger.getTimestamp() : null
+                
+                if (config.enable_log_api_request && apiTimestamp) {
+                  let parsedBody: any = null
+                  if (prep.init.body && typeof prep.init.body === 'string') {
+                    try {
+                      parsedBody = JSON.parse(prep.init.body)
+                    } catch (e) {
+                      parsedBody = prep.init.body
+                    }
+                  }
+                  
+                  logger.logApiRequest(
+                    {
+                      url: prep.url,
+                      method: prep.init.method,
+                      headers: prep.init.headers,
+                      body: parsedBody,
+                      conversationId: prep.conversationId,
+                      model: prep.effectiveModel
+                    },
+                    apiTimestamp
+                  )
+                }
+                
                 try {
                   const res = await fetch(prep.url, prep.init)
+                  
+                  if (config.enable_log_api_request && apiTimestamp) {
+                    const responseHeaders: Record<string, string> = {}
+                    res.headers.forEach((value, key) => {
+                      responseHeaders[key] = value
+                    })
+                    
+                    logger.logApiResponse(
+                      {
+                        status: res.status,
+                        statusText: res.statusText,
+                        headers: responseHeaders,
+                        conversationId: prep.conversationId,
+                        model: prep.effectiveModel
+                      },
+                      apiTimestamp
+                    )
+                  }
+                  
                   if (res.ok) {
                     if (config.usage_tracking_enabled)
                       fetchUsageLimits(auth)
@@ -187,8 +232,39 @@ export const createKiroPlugin =
                     await am.saveToDisk()
                     continue
                   }
+                  
+                  if (config.enable_log_api_request && apiTimestamp) {
+                    const responseHeaders: Record<string, string> = {}
+                    res.headers.forEach((value, key) => {
+                      responseHeaders[key] = value
+                    })
+                    
+                    logger.logApiResponse(
+                      {
+                        status: res.status,
+                        statusText: res.statusText,
+                        headers: responseHeaders,
+                        error: `Kiro Error: ${res.status}`,
+                        conversationId: prep.conversationId,
+                        model: prep.effectiveModel
+                      },
+                      apiTimestamp
+                    )
+                  }
+                  
                   throw new Error(`Kiro Error: ${res.status}`)
                 } catch (e) {
+                  if (config.enable_log_api_request && apiTimestamp) {
+                    logger.logApiResponse(
+                      {
+                        error: String(e),
+                        conversationId: prep.conversationId,
+                        model: prep.effectiveModel
+                      },
+                      apiTimestamp
+                    )
+                  }
+                  
                   if (isNetworkError(e) && retry < config.rate_limit_max_retries) {
                     const delay = 5000 * Math.pow(2, retry)
                     showToast(
