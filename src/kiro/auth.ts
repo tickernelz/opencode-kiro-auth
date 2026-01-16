@@ -1,5 +1,4 @@
 import type { KiroAuthDetails, RefreshParts } from '../plugin/types'
-import { KIRO_CONSTANTS } from '../constants'
 
 export function decodeRefreshToken(refresh: string): RefreshParts {
   const parts = refresh.split('|')
@@ -11,9 +10,9 @@ export function decodeRefreshToken(refresh: string): RefreshParts {
   return { refreshToken, authMethod: 'idc' }
 }
 
-export function accessTokenExpired(auth: KiroAuthDetails): boolean {
+export function accessTokenExpired(auth: KiroAuthDetails, bufferMs = 120000): boolean {
   if (!auth.access || !auth.expires) return true
-  return Date.now() >= auth.expires - KIRO_CONSTANTS.ACCESS_TOKEN_EXPIRY_BUFFER_MS
+  return Date.now() >= auth.expires - bufferMs
 }
 
 export function validateAuthDetails(auth: KiroAuthDetails): boolean {

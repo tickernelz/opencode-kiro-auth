@@ -135,9 +135,19 @@ export class AccountManager {
   }
 
   removeAccount(a: ManagedAccount): void {
+    const removedIndex = this.accounts.findIndex((x) => x.id === a.id)
+    if (removedIndex === -1) return
+
     this.accounts = this.accounts.filter((x) => x.id !== a.id)
     delete this.usage[a.id]
-    this.cursor = Math.max(0, Math.min(this.cursor, this.accounts.length - 1))
+
+    if (this.accounts.length === 0) {
+      this.cursor = 0
+    } else if (this.cursor >= this.accounts.length) {
+      this.cursor = this.accounts.length - 1
+    } else if (removedIndex <= this.cursor && this.cursor > 0) {
+      this.cursor--
+    }
   }
 
   updateFromAuth(a: ManagedAccount, auth: KiroAuthDetails): void {

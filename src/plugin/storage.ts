@@ -66,12 +66,15 @@ async function withLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
 }
 
 export async function loadAccounts(): Promise<AccountStorage> {
-  try {
-    const content = await fs.readFile(getStoragePath(), 'utf-8')
-    return JSON.parse(content)
-  } catch {
-    return { version: 1, accounts: [], activeIndex: -1 }
-  }
+  const path = getStoragePath()
+  return withLock(path, async () => {
+    try {
+      const content = await fs.readFile(path, 'utf-8')
+      return JSON.parse(content)
+    } catch {
+      return { version: 1, accounts: [], activeIndex: -1 }
+    }
+  })
 }
 
 export async function saveAccounts(storage: AccountStorage): Promise<void> {
@@ -89,12 +92,15 @@ export async function saveAccounts(storage: AccountStorage): Promise<void> {
 }
 
 export async function loadUsage(): Promise<UsageStorage> {
-  try {
-    const content = await fs.readFile(getUsagePath(), 'utf-8')
-    return JSON.parse(content)
-  } catch {
-    return { version: 1, usage: {} }
-  }
+  const path = getUsagePath()
+  return withLock(path, async () => {
+    try {
+      const content = await fs.readFile(path, 'utf-8')
+      return JSON.parse(content)
+    } catch {
+      return { version: 1, usage: {} }
+    }
+  })
 }
 
 export async function saveUsage(storage: UsageStorage): Promise<void> {

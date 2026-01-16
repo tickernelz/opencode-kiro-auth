@@ -58,7 +58,27 @@ export const createKiroPlugin =
               const budget = body.providerOptions?.thinkingConfig?.thinkingBudget || 20000
 
               let retry = 0
+              let iterations = 0
+              const startTime = Date.now()
+              const maxIterations = config.max_request_iterations
+              const timeoutMs = config.request_timeout_ms
+
               while (true) {
+                iterations++
+                const elapsed = Date.now() - startTime
+
+                if (iterations > maxIterations) {
+                  throw new Error(
+                    `Request exceeded max iterations (${maxIterations}). All accounts may be unhealthy or rate-limited.`
+                  )
+                }
+
+                if (elapsed > timeoutMs) {
+                  throw new Error(
+                    `Request timeout after ${Math.ceil(elapsed / 1000)}s. Max timeout: ${Math.ceil(timeoutMs / 1000)}s.`
+                  )
+                }
+
                 const count = am.getAccountCount()
                 if (count === 0) throw new Error('No accounts. Login first.')
                 const acc = am.getCurrentOrNext()
@@ -92,7 +112,7 @@ export const createKiroPlugin =
                 }
 
                 let auth = am.toAuthDetails(acc)
-                if (accessTokenExpired(auth)) {
+                if (accessTokenExpired(auth, config.token_expiry_buffer_ms)) {
                   try {
                     logger.log(`Refreshing token for ${acc.realEmail || acc.email}`)
                     auth = await refreshAccessToken(auth)
@@ -159,17 +179,25 @@ export const createKiroPlugin =
                   }
 
                   if (res.ok) {
-                    if (config.usage_tracking_enabled)
-                      fetchUsageLimits(auth)
-                        .then((u) => {
+                    if (config.usage_tracking_enabled) {
+                      const syncUsage = async (attempt = 0): Promise<void> => {
+                        try {
+                          const u = await fetchUsageLimits(auth)
                           updateAccountQuota(acc, u, am)
-                          am.saveToDisk()
-                        })
-                        .catch((e) =>
+                          await am.saveToDisk()
+                        } catch (e: any) {
+                          if (attempt < config.usage_sync_max_retries) {
+                            const delay = 1000 * Math.pow(2, attempt)
+                            await sleep(delay)
+                            return syncUsage(attempt + 1)
+                          }
                           logger.warn(
-                            `Usage sync failed for ${acc.realEmail || acc.email}: ${e.message}`
+                            `Usage sync failed for ${acc.realEmail || acc.email} after ${attempt + 1} attempts: ${e.message}`
                           )
-                        )
+                        }
+                      }
+                      syncUsage().catch(() => {})
+                    }
                     if (prep.streaming) {
                       const s = transformKiroStream(res, model, prep.conversationId)
                       return new Response(
@@ -316,7 +344,11 @@ export const createKiroPlugin =
                 const region = config.default_region
                 try {
                   const authData = await authorizeKiroIDC(region)
-                  const { url, waitForAuth } = await startIDCAuthServer(authData)
+                  const { url, waitForAuth } = await startIDCAuthServer(
+                    authData,
+                    config.auth_server_port_start,
+                    config.auth_server_port_range
+                  )
                   resolve({
                     url,
                     instructions: 'Opening browser...',

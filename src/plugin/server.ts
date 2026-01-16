@@ -23,11 +23,45 @@ export interface IDCAuthData {
   region: KiroRegion
 }
 
-export function startIDCAuthServer(
+async function tryPort(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const testServer = createServer()
+    testServer.once('error', () => resolve(false))
+    testServer.once('listening', () => {
+      testServer.close()
+      resolve(true)
+    })
+    testServer.listen(port, '127.0.0.1')
+  })
+}
+
+async function findAvailablePort(startPort: number, range: number): Promise<number> {
+  for (let i = 0; i < range; i++) {
+    const port = startPort + i
+    const available = await tryPort(port)
+    if (available) return port
+  }
+  throw new Error(
+    `No available ports in range ${startPort}-${startPort + range - 1}. Please close other applications using these ports.`
+  )
+}
+
+export async function startIDCAuthServer(
   authData: IDCAuthData,
-  port: number = 19847
+  startPort: number = 19847,
+  portRange: number = 10
 ): Promise<{ url: string; waitForAuth: () => Promise<KiroIDCTokenResult> }> {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
+    let port: number
+    try {
+      port = await findAvailablePort(startPort, portRange)
+      logger.log(`Auth server will use port ${port}`)
+    } catch (error) {
+      logger.error('Failed to find available port', error)
+      reject(error)
+      return
+    }
+
     let server: Server | null = null
     let timeoutId: any = null
     let resolver: any = null

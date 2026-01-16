@@ -125,6 +125,33 @@ function applyEnvOverrides(config: KiroConfig): KiroConfig {
       config.rate_limit_max_retries
     ),
 
+    max_request_iterations: parseNumberEnv(
+      env.KIRO_MAX_REQUEST_ITERATIONS,
+      config.max_request_iterations
+    ),
+
+    request_timeout_ms: parseNumberEnv(env.KIRO_REQUEST_TIMEOUT_MS, config.request_timeout_ms),
+
+    token_expiry_buffer_ms: parseNumberEnv(
+      env.KIRO_TOKEN_EXPIRY_BUFFER_MS,
+      config.token_expiry_buffer_ms
+    ),
+
+    usage_sync_max_retries: parseNumberEnv(
+      env.KIRO_USAGE_SYNC_MAX_RETRIES,
+      config.usage_sync_max_retries
+    ),
+
+    auth_server_port_start: parseNumberEnv(
+      env.KIRO_AUTH_SERVER_PORT_START,
+      config.auth_server_port_start
+    ),
+
+    auth_server_port_range: parseNumberEnv(
+      env.KIRO_AUTH_SERVER_PORT_RANGE,
+      config.auth_server_port_range
+    ),
+
     usage_tracking_enabled: parseBooleanEnv(
       env.KIRO_USAGE_TRACKING_ENABLED,
       config.usage_tracking_enabled

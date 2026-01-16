@@ -39,7 +39,6 @@ export const KIRO_CONSTANTS = {
   BASE_URL: 'https://q.{{region}}.amazonaws.com/generateAssistantResponse',
   USAGE_LIMITS_URL: 'https://q.{{region}}.amazonaws.com/getUsageLimits',
   DEFAULT_REGION: 'us-east-1' as KiroRegion,
-  ACCESS_TOKEN_EXPIRY_BUFFER_MS: 60000,
   AXIOS_TIMEOUT: 120000,
   USER_AGENT: 'KiroIDE',
   KIRO_VERSION: '0.7.5',
