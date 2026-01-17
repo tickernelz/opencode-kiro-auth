@@ -1,4 +1,5 @@
 import { loadConfig } from './plugin/config'
+import { exec } from 'node:child_process'
 import { AccountManager, generateAccountId } from './plugin/accounts'
 import { accessTokenExpired, encodeRefreshToken } from './kiro/auth'
 import { refreshAccessToken } from './plugin/token'
@@ -26,6 +27,21 @@ const formatUsageMessage = (usedCount: number, limitCount: number, email: string
     return `Usage (${email}): ${usedCount}/${limitCount} (${percentage}%)`
   }
   return `Usage (${email}): ${usedCount}`
+}
+
+const openBrowser = (url: string) => {
+  const escapedUrl = url.replace(/"/g, '\\"')
+  const platform = process.platform
+  const command =
+    platform === 'win32'
+      ? `cmd /c start "" "${escapedUrl}"`
+      : platform === 'darwin'
+        ? `open "${escapedUrl}"`
+        : `xdg-open "${escapedUrl}"`
+
+  exec(command, (error) => {
+    if (error) logger.warn(`Failed to open browser automatically: ${error.message}`, error)
+  })
 }
 
 export const createKiroPlugin =
@@ -349,9 +365,10 @@ export const createKiroPlugin =
                     config.auth_server_port_start,
                     config.auth_server_port_range
                   )
+                  openBrowser(url)
                   resolve({
                     url,
-                    instructions: 'Opening browser...',
+                    instructions: `Open this URL to continue: ${url}`,
                     method: 'auto',
                     callback: async () => {
                       try {

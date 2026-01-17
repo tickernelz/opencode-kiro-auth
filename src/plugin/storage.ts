@@ -70,7 +70,11 @@ export async function loadAccounts(): Promise<AccountStorage> {
   return withLock(path, async () => {
     try {
       const content = await fs.readFile(path, 'utf-8')
-      return JSON.parse(content)
+      const parsed = JSON.parse(content)
+      if (!parsed || !Array.isArray(parsed.accounts)) {
+        return { version: 1, accounts: [], activeIndex: -1 }
+      }
+      return parsed
     } catch {
       return { version: 1, accounts: [], activeIndex: -1 }
     }
@@ -96,7 +100,11 @@ export async function loadUsage(): Promise<UsageStorage> {
   return withLock(path, async () => {
     try {
       const content = await fs.readFile(path, 'utf-8')
-      return JSON.parse(content)
+      const parsed = JSON.parse(content)
+      if (!parsed || typeof parsed.usage !== 'object' || parsed.usage === null) {
+        return { version: 1, usage: {} }
+      }
+      return parsed
     } catch {
       return { version: 1, usage: {} }
     }

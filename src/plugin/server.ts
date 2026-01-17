@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse, type Server } 
 import { getIDCAuthHtml, getSuccessHtml, getErrorHtml } from './auth-page'
 import type { KiroRegion } from './types'
 import * as logger from './logger'
+import { KIRO_CONSTANTS } from '../constants'
 
 export interface KiroIDCTokenResult {
   email: string
@@ -79,27 +80,53 @@ export async function startIDCAuthServer(
 
     const poll = async () => {
       try {
-        const body = new URLSearchParams({
-          grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-          device_code: authData.deviceCode,
-          client_id: authData.clientId,
-          client_secret: authData.clientSecret
-        })
+        const body = {
+          grantType: 'urn:ietf:params:oauth:grant-type:device_code',
+          deviceCode: authData.deviceCode,
+          clientId: authData.clientId,
+          clientSecret: authData.clientSecret
+        }
         const res = await fetch(`https://oidc.${authData.region}.amazonaws.com/token`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: body.toString()
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
         })
-        const d = await res.json()
+
+        const responseText = await res.text()
+        let d: any = {}
+        if (responseText) {
+          try {
+            d = JSON.parse(responseText)
+          } catch (parseError: any) {
+            logger.error(
+              `Auth polling error: Failed to parse JSON (status ${res.status})`,
+              parseError
+            )
+            throw parseError
+          }
+        }
         if (res.ok) {
-          const acc = d.access_token,
-            ref = d.refresh_token,
-            exp = Date.now() + d.expires_in * 1000
-          const infoRes = await fetch('https://view.awsapps.com/api/user/info', {
-            headers: { Authorization: `Bearer ${acc}` }
-          })
-          const info = await infoRes.json()
-          const email = info.email || info.userName || 'builder-id@aws.amazon.com'
+          const acc = d.access_token || d.accessToken,
+            ref = d.refresh_token || d.refreshToken,
+            exp = Date.now() + (d.expires_in || d.expiresIn || 0) * 1000
+          let email = 'builder-id@aws.amazon.com'
+          try {
+            const infoRes = await fetch('https://view.awsapps.com/api/user/info', {
+              headers: { Authorization: `Bearer ${acc}` }
+            })
+            if (infoRes.ok) {
+              const info = await infoRes.json()
+              email = info.email || info.userName || email
+            } else {
+              logger.warn(
+                `User info request failed with status ${infoRes.status}; using fallback email`
+              )
+            }
+          } catch (infoError: any) {
+            logger.warn(
+              `Failed to fetch user info; using fallback email: ${infoError?.message || infoError}`
+            )
+          }
           status.status = 'success'
           if (resolver)
             resolver({
@@ -116,14 +143,14 @@ export async function startIDCAuthServer(
         } else {
           status.status = 'failed'
           status.error = d.error_description || d.error
-          logger.error(`Auth polling failed: ${status.error}`)
+          logger.error(`Auth polling failed a: ${status.error}`)
           if (rejector) rejector(new Error(status.error))
           setTimeout(cleanup, 2000)
         }
       } catch (e: any) {
         status.status = 'failed'
         status.error = e.message
-        logger.error(`Auth polling error: ${e.message}`, e)
+        logger.error(`Auth polling error b: ${e.message}`, e)
         if (rejector) rejector(e)
         setTimeout(cleanup, 2000)
       }
