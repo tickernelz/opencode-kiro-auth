@@ -293,7 +293,7 @@ export async function* transformKiroStream(
     outputTokens = estimateTokens(totalContent)
 
     if (contextUsagePercentage !== null && contextUsagePercentage > 0) {
-      const totalTokens = Math.round((172500 * contextUsagePercentage) / 100)
+      const totalTokens = Math.round((200000 * contextUsagePercentage) / 100)
       inputTokens = Math.max(0, totalTokens - outputTokens)
     }
 

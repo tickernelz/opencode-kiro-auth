@@ -86,7 +86,7 @@ function parseEventStreamChunk(rawText: string): ParsedResponse {
   })
 
   if (contextUsagePercentage !== undefined) {
-    const totalTokens = Math.round((172500 * contextUsagePercentage) / 100)
+    const totalTokens = Math.round((200000 * contextUsagePercentage) / 100)
     outputTokens = estimateTokens(content)
     inputTokens = Math.max(0, totalTokens - outputTokens)
   }

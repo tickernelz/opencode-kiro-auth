@@ -10,6 +10,34 @@ import { KIRO_CONSTANTS } from '../constants.js'
 import { resolveKiroModel } from './models.js'
 import * as logger from './logger.js'
 
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s
+  const half = Math.floor(max / 2)
+  return s.substring(0, half) + '\n... [TRUNCATED] ...\n' + s.substring(s.length - half)
+}
+
+function sanitizeHistory(history: CodeWhispererMessage[]): CodeWhispererMessage[] {
+  const result: CodeWhispererMessage[] = []
+  for (let i = 0; i < history.length; i++) {
+    const m = history[i]
+    if (!m) continue
+    if (m.assistantResponseMessage?.toolUses) {
+      const next = history[i + 1]
+      if (next?.userInputMessage?.userInputMessageContext?.toolResults) {
+        result.push(m)
+      }
+    } else if (m.userInputMessage?.userInputMessageContext?.toolResults) {
+      const prev = result[result.length - 1]
+      if (prev?.assistantResponseMessage?.toolUses) {
+        result.push(m)
+      }
+    } else {
+      result.push(m)
+    }
+  }
+  return result
+}
+
 export function transformToCodeWhisperer(
   url: string,
   body: any,
@@ -19,28 +47,20 @@ export function transformToCodeWhisperer(
   budget = 20000
 ): PreparedRequest {
   const req = typeof body === 'string' ? JSON.parse(body) : body
-  const { messages, tools, system, conversationId } = req
-
+  const { messages, tools, system } = req
   const convId = crypto.randomUUID()
-
   if (!messages || messages.length === 0) throw new Error('No messages')
-
   const resolved = resolveKiroModel(model)
-
   let sys = system || ''
   if (think) {
     const pfx = `<thinking_mode>enabled</thinking_mode><max_thinking_length>${budget}</max_thinking_length>`
     sys = sys.includes('<thinking_mode>') ? sys : sys ? `${pfx}\n${sys}` : pfx
   }
-
   const msgs = mergeAdjacentMessages([...messages])
-
   const lastMsg = msgs[msgs.length - 1]
   if (lastMsg && lastMsg.role === 'assistant' && getContentText(lastMsg) === '{') msgs.pop()
-
   const cwTools = tools ? convertToolsToCodeWhisperer(tools) : []
-  const history: CodeWhispererMessage[] = []
-
+  let history: CodeWhispererMessage[] = []
   let firstUserIndex = -1
   for (let i = 0; i < msgs.length; i++) {
     if (msgs[i].role === 'user') {
@@ -48,7 +68,6 @@ export function transformToCodeWhisperer(
       break
     }
   }
-
   if (sys) {
     if (firstUserIndex !== -1) {
       const m = msgs[firstUserIndex]
@@ -58,9 +77,7 @@ export function transformToCodeWhisperer(
           { type: 'text', text: `${sys}\n\n${oldContent}` },
           ...m.content.filter((p: any) => p.type !== 'text')
         ]
-      } else {
-        m.content = `${sys}\n\n${oldContent}`
-      }
+      } else m.content = `${sys}\n\n${oldContent}`
     } else {
       history.push({
         userInputMessage: {
@@ -71,7 +88,6 @@ export function transformToCodeWhisperer(
       })
     }
   }
-
   for (let i = 0; i < msgs.length - 1; i++) {
     const m = msgs[i]
     if (!m) continue
@@ -84,7 +100,7 @@ export function transformToCodeWhisperer(
           if (p.type === 'text') uim.content += p.text || ''
           else if (p.type === 'tool_result')
             trs.push({
-              content: [{ text: getContentText(p.content || p) }],
+              content: [{ text: truncate(getContentText(p.content || p), 250000) }],
               status: 'success',
               toolUseId: p.tool_use_id
             })
@@ -98,30 +114,28 @@ export function transformToCodeWhisperer(
       if (imgs.length) uim.images = imgs
       if (trs.length) uim.userInputMessageContext = { toolResults: deduplicateToolResults(trs) }
       const prev = history[history.length - 1]
-      if (prev && prev.userInputMessage) {
+      if (prev && prev.userInputMessage)
         history.push({ assistantResponseMessage: { content: 'Continue' } })
-      }
       history.push({ userInputMessage: uim })
     } else if (m.role === 'tool') {
       const trs: any[] = []
       if (m.tool_results) {
         for (const tr of m.tool_results)
           trs.push({
-            content: [{ text: getContentText(tr) }],
+            content: [{ text: truncate(getContentText(tr), 250000) }],
             status: 'success',
             toolUseId: tr.tool_call_id
           })
       } else {
         trs.push({
-          content: [{ text: getContentText(m) }],
+          content: [{ text: truncate(getContentText(m), 250000) }],
           status: 'success',
           toolUseId: m.tool_call_id
         })
       }
       const prev = history[history.length - 1]
-      if (prev && prev.userInputMessage) {
+      if (prev && prev.userInputMessage)
         history.push({ assistantResponseMessage: { content: 'Continue' } })
-      }
       history.push({
         userInputMessage: {
           content: 'Tool results provided.',
@@ -134,7 +148,6 @@ export function transformToCodeWhisperer(
       const arm: any = { content: '' }
       const tus: any[] = []
       let th = ''
-
       if (Array.isArray(m.content)) {
         for (const p of m.content) {
           if (p.type === 'text') arm.content += p.text || ''
@@ -142,10 +155,7 @@ export function transformToCodeWhisperer(
           else if (p.type === 'tool_use')
             tus.push({ input: p.input, name: p.name, toolUseId: p.id })
         }
-      } else {
-        arm.content = getContentText(m)
-      }
-
+      } else arm.content = getContentText(m)
       if (m.tool_calls && Array.isArray(m.tool_calls)) {
         for (const tc of m.tool_calls) {
           tus.push({
@@ -158,7 +168,6 @@ export function transformToCodeWhisperer(
           })
         }
       }
-
       if (th)
         arm.content = arm.content
           ? `<thinking>${th}</thinking>\n\n${arm.content}`
@@ -167,13 +176,23 @@ export function transformToCodeWhisperer(
       history.push({ assistantResponseMessage: arm })
     }
   }
-
+  history = sanitizeHistory(history)
+  let historySize = JSON.stringify(history).length
+  while (historySize > 850000 && history.length > 2) {
+    history.shift()
+    while (history.length > 0) {
+      const first = history[0]
+      if (first && first.userInputMessage) break
+      history.shift()
+    }
+    history = sanitizeHistory(history)
+    historySize = JSON.stringify(history).length
+  }
   const curMsg = msgs[msgs.length - 1]
   if (!curMsg) throw new Error('Empty')
   let curContent = ''
   const curTrs: any[] = [],
     curImgs: any[] = []
-
   if (curMsg.role === 'assistant') {
     const arm: any = { content: '' }
     let th = ''
@@ -210,18 +229,17 @@ export function transformToCodeWhisperer(
     const prev = history[history.length - 1]
     if (prev && !prev.assistantResponseMessage)
       history.push({ assistantResponseMessage: { content: 'Continue' } })
-
     if (curMsg.role === 'tool') {
       if (curMsg.tool_results) {
         for (const tr of curMsg.tool_results)
           curTrs.push({
-            content: [{ text: getContentText(tr) }],
+            content: [{ text: truncate(getContentText(tr), 250000) }],
             status: 'success',
             toolUseId: tr.tool_call_id
           })
       } else {
         curTrs.push({
-          content: [{ text: getContentText(curMsg) }],
+          content: [{ text: truncate(getContentText(curMsg), 250000) }],
           status: 'success',
           toolUseId: curMsg.tool_call_id
         })
@@ -231,7 +249,7 @@ export function transformToCodeWhisperer(
         if (p.type === 'text') curContent += p.text || ''
         else if (p.type === 'tool_result')
           curTrs.push({
-            content: [{ text: getContentText(p.content || p) }],
+            content: [{ text: truncate(getContentText(p.content || p), 250000) }],
             status: 'success',
             toolUseId: p.tool_use_id
           })
@@ -242,10 +260,8 @@ export function transformToCodeWhisperer(
           })
       }
     } else curContent = getContentText(curMsg)
-
     if (!curContent) curContent = curTrs.length ? 'Tool results provided.' : 'Continue'
   }
-
   const request: CodeWhispererRequest = {
     conversationState: {
       chatTriggerType: KIRO_CONSTANTS.CHAT_TRIGGER_TYPE_MANUAL,
@@ -259,10 +275,7 @@ export function transformToCodeWhisperer(
       }
     }
   }
-  if (history.length > 0) {
-    ;(request.conversationState as any).history = history
-  }
-
+  if (history.length > 0) (request.conversationState as any).history = history
   const uim = request.conversationState.currentMessage.userInputMessage
   if (uim) {
     if (curImgs.length) uim.images = curImgs
@@ -270,7 +283,6 @@ export function transformToCodeWhisperer(
     if (curTrs.length) ctx.toolResults = deduplicateToolResults(curTrs)
     if (cwTools.length) ctx.tools = cwTools
     if (Object.keys(ctx).length) uim.userInputMessageContext = ctx
-
     const hasToolsInHistory = historyHasToolCalling(history)
     if (hasToolsInHistory) {
       const toolNamesInHistory = extractToolNamesFromHistory(history)
@@ -283,19 +295,11 @@ export function transformToCodeWhisperer(
           (name) => !existingToolNames.has(name)
         )
         if (missingToolNames.length > 0) {
-          logger.log(
-            `[Kiro] Adding ${missingToolNames.length} missing tool definitions: ${missingToolNames.join(', ')}`
-          )
           const placeholderTools = missingToolNames.map((name) => ({
             toolSpecification: {
               name,
               description: 'Tool',
-              inputSchema: {
-                json: {
-                  type: 'object',
-                  properties: {}
-                }
-              }
+              inputSchema: { json: { type: 'object', properties: {} } }
             }
           }))
           if (!uim.userInputMessageContext) uim.userInputMessageContext = {}
@@ -304,7 +308,6 @@ export function transformToCodeWhisperer(
       }
     }
   }
-
   const machineId = crypto
     .createHash('sha256')
     .update(auth.profileArn || auth.clientId || 'KIRO_DEFAULT_MACHINE')
@@ -316,7 +319,6 @@ export function transformToCodeWhisperer(
   const osN =
     osP === 'win32' ? `windows#${osR}` : osP === 'darwin' ? `macos#${osR}` : `${osP}#${osR}`
   const ua = `aws-sdk-js/1.0.0 ua/2.1 os/${osN} lang/js md/nodejs#${nodeV} api/codewhispererruntime#1.0.0 m/E KiroIDE-${kiroV}-${machineId}`
-
   return {
     url: KIRO_CONSTANTS.BASE_URL.replace('{{region}}', auth.region),
     init: {
