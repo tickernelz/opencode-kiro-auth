@@ -7,8 +7,8 @@ OpenCode plugin for AWS Kiro (CodeWhisperer) providing access to Claude Sonnet a
 
 ## Features
 
-- **Multiple Auth Methods**: Supports AWS Builder ID (IDC) and Kiro Desktop (Personal) authentication.
-- **Auto-Sync Kiro CLI**: Automatically imports active sessions from your local `kiro-cli` SQLite database.
+- **Multiple Auth Methods**: Supports AWS Builder ID (IDC) and Kiro Desktop (CLI-based) authentication.
+- **Auto-Sync Kiro CLI**: Automatically imports and synchronizes active sessions from your local `kiro-cli` SQLite database.
 - **Gradual Context Truncation**: Intelligently prevents error 400 by reducing context size dynamically during retries.
 - **Intelligent Account Rotation**: Prioritizes multi-account usage based on lowest available quota.
 - **High-Performance Storage**: Efficient account and usage management using native Bun SQLite.
@@ -53,10 +53,14 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
 
 ## Setup
 
-1. Run `opencode auth login`.
-2. Select `Other`, type `kiro`, and press enter.
-3. Choose your preferred method: **AWS Builder ID (IDC)** for device code flow or **Kiro Desktop** for personal tokens.
-4. Auto-Sync will automatically detect existing `kiro-cli` sessions on startup.
+1. **Authentication via Kiro CLI (Recommended)**:
+   - Perform login directly in your terminal using `kiro-cli login`.
+   - The plugin will automatically detect and import your session on startup.
+2. **Direct Authentication**:
+   - Run `opencode auth login`.
+   - Select `Other`, type `kiro`, and press enter.
+   - Follow the instructions for **AWS Builder ID (IDC)**.
+3. Configuration will be automatically managed at `~/.config/opencode/kiro.db`.
 
 ## Configuration
 
