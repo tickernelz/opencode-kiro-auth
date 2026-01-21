@@ -65,12 +65,12 @@ export class AccountManager {
   getAccounts(): ManagedAccount[] {
     return [...this.accounts]
   }
-  shouldShowToast(debounce = 30000): boolean {
+  shouldShowToast(debounce = 10000): boolean {
     if (Date.now() - this.lastToastTime < debounce) return false
     this.lastToastTime = Date.now()
     return true
   }
-  shouldShowUsageToast(debounce = 30000): boolean {
+  shouldShowUsageToast(debounce = 10000): boolean {
     if (Date.now() - this.lastUsageToastTime < debounce) return false
     this.lastUsageToastTime = Date.now()
     return true
@@ -179,10 +179,13 @@ export class AccountManager {
   markUnhealthy(a: ManagedAccount, reason: string, recovery?: number): void {
     const acc = this.accounts.find((x) => x.id === a.id)
     if (acc) {
-      acc.isHealthy = false
-      acc.unhealthyReason = reason
       acc.failCount = (acc.failCount || 0) + 1
-      acc.recoveryTime = acc.failCount >= 3 ? undefined : recovery || Date.now() + 3600000
+      acc.unhealthyReason = reason
+      acc.lastUsed = Date.now()
+      if (acc.failCount >= 3) {
+        acc.isHealthy = false
+        acc.recoveryTime = recovery || Date.now() + 3600000
+      }
       kiroDb.upsertAccount(acc)
     }
   }

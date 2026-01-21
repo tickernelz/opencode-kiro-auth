@@ -114,7 +114,7 @@ export const createKiroPlugin =
                   }
                   throw new Error('All accounts are unhealthy or rate-limited')
                 }
-                if (count > 1 && am.shouldShowToast())
+                if (am.shouldShowToast())
                   showToast(
                     `Using ${acc.email} (${am.getAccounts().indexOf(acc) + 1}/${count})`,
                     'info'
