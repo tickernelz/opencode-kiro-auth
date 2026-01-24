@@ -12,6 +12,19 @@ export interface KiroIDCTokenResult {
   clientId: string
   clientSecret: string
 }
+
+export interface KiroSSOTokenResult {
+  email: string
+  accessToken: string
+  refreshToken: string
+  expiresAt: number
+  clientId: string
+  clientSecret: string
+  ssoStartUrl: string
+}
+
+export type KiroTokenResult = KiroIDCTokenResult | KiroSSOTokenResult
+
 export interface IDCAuthData {
   verificationUrl: string
   verificationUriComplete: string
@@ -22,6 +35,7 @@ export interface IDCAuthData {
   interval: number
   expiresIn: number
   region: KiroRegion
+  ssoStartUrl?: string
 }
 
 async function tryPort(port: number): Promise<boolean> {
@@ -51,7 +65,7 @@ export async function startIDCAuthServer(
   authData: IDCAuthData,
   startPort: number = 19847,
   portRange: number = 10
-): Promise<{ url: string; waitForAuth: () => Promise<KiroIDCTokenResult> }> {
+): Promise<{ url: string; waitForAuth: () => Promise<KiroTokenResult> }> {
   return new Promise(async (resolve, reject) => {
     let port: number
     try {
@@ -109,7 +123,7 @@ export async function startIDCAuthServer(
           const acc = d.access_token || d.accessToken,
             ref = d.refresh_token || d.refreshToken,
             exp = Date.now() + (d.expires_in || d.expiresIn || 0) * 1000
-          let email = 'builder-id@aws.amazon.com'
+          let email = authData.ssoStartUrl ? 'sso-user@aws.amazon.com' : 'builder-id@aws.amazon.com'
           try {
             const infoRes = await fetch('https://view.awsapps.com/api/user/info', {
               headers: { Authorization: `Bearer ${acc}` }
@@ -128,15 +142,27 @@ export async function startIDCAuthServer(
             )
           }
           status.status = 'success'
-          if (resolver)
-            resolver({
-              email,
-              accessToken: acc,
-              refreshToken: ref,
-              expiresAt: exp,
-              clientId: authData.clientId,
-              clientSecret: authData.clientSecret
-            })
+          
+          const result: KiroTokenResult = authData.ssoStartUrl
+            ? {
+                email,
+                accessToken: acc,
+                refreshToken: ref,
+                expiresAt: exp,
+                clientId: authData.clientId,
+                clientSecret: authData.clientSecret,
+                ssoStartUrl: authData.ssoStartUrl
+              }
+            : {
+                email,
+                accessToken: acc,
+                refreshToken: ref,
+                expiresAt: exp,
+                clientId: authData.clientId,
+                clientSecret: authData.clientSecret
+              }
+          
+          if (resolver) resolver(result)
           setTimeout(cleanup, 2000)
         } else if (d.error === 'authorization_pending') {
           setTimeout(poll, authData.interval * 1000)

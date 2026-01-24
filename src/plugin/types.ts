@@ -1,4 +1,4 @@
-export type KiroAuthMethod = 'idc'
+export type KiroAuthMethod = 'idc' | 'sso'
 export type KiroRegion = 'us-east-1' | 'us-west-2'
 
 export interface KiroAuthDetails {
@@ -11,6 +11,7 @@ export interface KiroAuthDetails {
   clientSecret?: string
   email?: string
   profileArn?: string
+  ssoStartUrl?: string
 }
 
 export interface RefreshParts {
@@ -19,6 +20,7 @@ export interface RefreshParts {
   clientSecret?: string
   profileArn?: string
   authMethod?: KiroAuthMethod
+  ssoStartUrl?: string
 }
 
 export interface ManagedAccount {
@@ -30,6 +32,7 @@ export interface ManagedAccount {
   clientId?: string
   clientSecret?: string
   profileArn?: string
+  ssoStartUrl?: string
   refreshToken: string
   accessToken: string
   expiresAt: number
@@ -51,6 +54,7 @@ export interface AccountMetadata {
   clientId?: string
   clientSecret?: string
   profileArn?: string
+  ssoStartUrl?: string
   refreshToken: string
   accessToken: string
   expiresAt: number

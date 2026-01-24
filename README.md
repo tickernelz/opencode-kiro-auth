@@ -7,14 +7,16 @@ OpenCode plugin for AWS Kiro (CodeWhisperer) providing access to Claude Sonnet a
 
 ## Features
 
-- AWS Builder ID (IDC) authentication with seamless device code flow.
-- Intelligent multi-account rotation prioritized by lowest usage.
-- Automated token refresh and rate limit handling with exponential backoff.
-- Native thinking mode support via virtual model mappings.
-- Decoupled storage for credentials and real-time usage metadata.
-- Configurable request timeout and iteration limits to prevent hangs.
-- Automatic port selection for auth server to avoid conflicts.
-- Usage tracking with automatic retry on sync failures.
+- **Multiple Authentication Methods**: AWS Builder ID (personal) and AWS SSO (enterprise)
+- AWS Builder ID (IDC) authentication with seamless device code flow
+- AWS SSO (IAM Identity Center) for enterprise users with organization identity providers
+- Intelligent multi-account rotation prioritized by lowest usage
+- Automated token refresh and rate limit handling with exponential backoff
+- Native thinking mode support via virtual model mappings
+- Decoupled storage for credentials and real-time usage metadata
+- Configurable request timeout and iteration limits to prevent hangs
+- Automatic port selection for auth server to avoid conflicts
+- Usage tracking with automatic retry on sync failures
 
 ## Installation
 
@@ -54,10 +56,56 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
 
 ## Setup
 
+### AWS Builder ID (Personal)
+
 1. Run `opencode auth login`.
 2. Select `Other`, type `kiro`, and press enter.
-3. Follow the terminal instructions to complete the AWS Builder ID authentication.
-4. Configuration template will be automatically created at `~/.config/opencode/kiro.json` on first load.
+3. Select `AWS Builder ID (IDC)`.
+4. Follow the terminal instructions to complete the AWS Builder ID authentication.
+5. Configuration template will be automatically created at `~/.config/opencode/kiro.json` on first load.
+
+### AWS SSO (Enterprise/Organization)
+
+For organizations using AWS IAM Identity Center with corporate identity providers (Okta, Azure AD, etc.).
+
+#### Prerequisites
+
+1. Your organization must have IAM Identity Center enabled
+2. You need your organization's SSO start URL (e.g., `https://my-org.awsapps.com/start`)
+3. Your admin must grant you appropriate permissions (e.g., PowerUserAccess)
+
+#### Finding Your SSO Start URL
+
+You can find your SSO start URL in one of these ways:
+- Contact your AWS administrator
+- Check your AWS access portal URL
+- Find it in IAM Identity Center console under Settings → AWS access portal URL
+
+#### Configuration (Optional)
+
+You can pre-configure your SSO start URL in `~/.config/opencode/kiro.json`:
+
+```json
+{
+  "sso_start_url": "https://my-org.awsapps.com/start",
+  "sso_region": "us-east-1"
+}
+```
+
+#### Login
+
+1. Run `opencode auth login`.
+2. Select `Other`, type `kiro`, and press enter.
+3. Select `AWS SSO (IAM Identity Center)`.
+4. Enter your SSO start URL when prompted (if not pre-configured).
+5. Complete authentication in your browser using your organization's identity provider.
+
+### Multi-Account Support
+
+Both authentication methods support multiple accounts:
+- Mix and match Builder ID and SSO accounts
+- Automatic rotation based on usage and rate limits
+- Each account tracked independently
 
 ## Configuration
 
@@ -76,7 +124,9 @@ The plugin supports extensive configuration options. Edit `~/.config/opencode/ki
   "auth_server_port_start": 19847,
   "auth_server_port_range": 10,
   "usage_tracking_enabled": true,
-  "enable_log_api_request": false
+  "enable_log_api_request": false,
+  "sso_start_url": "https://my-org.awsapps.com/start",
+  "sso_region": "us-east-1"
 }
 ```
 
@@ -94,6 +144,8 @@ The plugin supports extensive configuration options. Edit `~/.config/opencode/ki
 - `auth_server_port_range`: Number of ports to try (1-100)
 - `usage_tracking_enabled`: Enable usage tracking and toast notifications
 - `enable_log_api_request`: Enable detailed API request logging
+- `sso_start_url`: (Optional) Pre-configure your organization's SSO start URL
+- `sso_region`: (Optional) AWS region for SSO authentication
 
 ### Environment Variables
 
@@ -111,6 +163,8 @@ All configuration options can be overridden via environment variables:
 - `KIRO_AUTH_SERVER_PORT_RANGE`
 - `KIRO_USAGE_TRACKING_ENABLED`
 - `KIRO_ENABLE_LOG_API_REQUEST`
+- `KIRO_SSO_START_URL`
+- `KIRO_SSO_REGION`
 
 ## Storage
 

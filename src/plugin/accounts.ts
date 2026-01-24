@@ -156,11 +156,14 @@ export class AccountManager {
       acc.accessToken = auth.access
       acc.expiresAt = auth.expires
       acc.lastUsed = Date.now()
-      if (auth.email && auth.email !== 'builder-id@aws.amazon.com') acc.realEmail = auth.email
+      if (auth.email && auth.email !== 'builder-id@aws.amazon.com' && auth.email !== 'sso-user@aws.amazon.com') {
+        acc.realEmail = auth.email
+      }
       const p = decodeRefreshToken(auth.refresh)
       acc.refreshToken = p.refreshToken
       if (p.profileArn) acc.profileArn = p.profileArn
       if (p.clientId) acc.clientId = p.clientId
+      if (p.ssoStartUrl) acc.ssoStartUrl = p.ssoStartUrl
     }
   }
 
@@ -192,7 +195,8 @@ export class AccountManager {
       profileArn: a.profileArn,
       clientId: a.clientId,
       clientSecret: a.clientSecret,
-      authMethod: a.authMethod
+      authMethod: a.authMethod,
+      ssoStartUrl: a.ssoStartUrl
     }
     return {
       refresh: encodeRefreshToken(p),
@@ -203,7 +207,8 @@ export class AccountManager {
       profileArn: a.profileArn,
       clientId: a.clientId,
       clientSecret: a.clientSecret,
-      email: a.email
+      email: a.email,
+      ssoStartUrl: a.ssoStartUrl
     }
   }
 }

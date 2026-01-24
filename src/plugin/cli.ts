@@ -46,3 +46,62 @@ export async function promptLoginMode(existingAccounts: ExistingAccountInfo[]): 
     rl.close()
   }
 }
+
+export async function promptForSSOUrl(): Promise<string> {
+  const rl = createInterface({ input, output })
+  try {
+    while (true) {
+      const answer = await rl.question('SSO Start URL: ')
+      const trimmed = answer.trim()
+
+      if (!trimmed) {
+        console.log('URL cannot be empty. Please try again.')
+        continue
+      }
+
+      try {
+        new URL(trimmed)
+        if (!trimmed.includes('awsapps.com')) {
+          console.log('Warning: URL does not appear to be an AWS SSO URL')
+          const confirm = await rl.question('Continue anyway? (y/n): ')
+          if (confirm.trim().toLowerCase() !== 'y' && confirm.trim().toLowerCase() !== 'yes') {
+            continue
+          }
+        }
+        return trimmed
+      } catch {
+        console.log('Invalid URL format. Please try again.')
+      }
+    }
+  } finally {
+    rl.close()
+  }
+}
+
+export type AuthMethodChoice = 'idc' | 'sso'
+
+export async function promptAuthMethod(): Promise<AuthMethodChoice> {
+  const rl = createInterface({ input, output })
+  try {
+    console.log('\nSelect authentication method:')
+    console.log('1. AWS Builder ID (Personal/Trial)')
+    console.log('2. AWS SSO (Enterprise/Organization)\n')
+
+    while (true) {
+      const answer = await rl.question('Choice (1 or 2): ')
+      const choice = answer.trim()
+
+      if (choice === '1') {
+        return 'idc'
+      }
+      if (choice === '2') {
+        return 'sso'
+      }
+
+      console.log('Invalid choice. Please enter 1 or 2.')
+    }
+  } finally {
+    rl.close()
+  }
+}
+

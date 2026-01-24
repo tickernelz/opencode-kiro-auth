@@ -31,7 +31,11 @@ export const KiroConfigSchema = z.object({
 
   usage_tracking_enabled: z.boolean().default(true),
 
-  enable_log_api_request: z.boolean().default(false)
+  enable_log_api_request: z.boolean().default(false),
+
+  sso_start_url: z.string().url().optional(),
+
+  sso_region: RegionSchema.optional()
 })
 
 export type KiroConfig = z.infer<typeof KiroConfigSchema>

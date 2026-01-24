@@ -8,11 +8,14 @@ import { parseEventStream } from './plugin/response'
 import { transformKiroStream } from './plugin/streaming'
 import { fetchUsageLimits, updateAccountQuota } from './plugin/usage'
 import { authorizeKiroIDC } from './kiro/oauth-idc'
+import { authorizeKiroSSO, pollKiroSSOToken } from './kiro/oauth-sso'
 import { startIDCAuthServer } from './plugin/server'
 import { KiroTokenRefreshError } from './plugin/errors'
-import { promptAddAnotherAccount, promptLoginMode } from './plugin/cli'
+import { promptAddAnotherAccount, promptLoginMode, promptAuthMethod, promptForSSOUrl } from './plugin/cli'
 import type { ManagedAccount } from './plugin/types'
 import type { KiroIDCTokenResult } from './kiro/oauth-idc'
+import type { KiroSSOTokenResult } from './kiro/oauth-sso'
+import type { KiroTokenResult } from './plugin/server'
 import { KIRO_CONSTANTS } from './constants'
 import * as logger from './plugin/logger'
 
@@ -597,6 +600,285 @@ export const createKiroPlugin =
                   resolve({
                     url: '',
                     instructions: 'Authorization failed',
+                    method: 'auto',
+                    callback: async () => ({ type: 'failed' })
+                  })
+                }
+              })
+          },
+          {
+            id: 'sso',
+            label: 'AWS SSO (IAM Identity Center)',
+            type: 'oauth',
+            authorize: async (inputs?: any) =>
+              new Promise(async (resolve) => {
+                let ssoStartUrl = config.sso_start_url
+                const region = config.sso_region || config.default_region
+
+                if (inputs) {
+                  const accounts: KiroSSOTokenResult[] = []
+                  let startFresh = true
+
+                  const existingAm = await AccountManager.loadFromDisk(
+                    config.account_selection_strategy
+                  )
+                  if (existingAm.getAccountCount() > 0) {
+                    const existingAccounts = existingAm.getAccounts().map((acc, idx) => ({
+                      email: acc.realEmail || acc.email,
+                      index: idx
+                    }))
+
+                    const loginMode = await promptLoginMode(existingAccounts)
+                    startFresh = loginMode === 'fresh'
+
+                    console.log(
+                      startFresh
+                        ? '\nStarting fresh - existing accounts will be replaced.\n'
+                        : '\nAdding to existing accounts.\n'
+                    )
+                  }
+
+                  while (true) {
+                    console.log(`\n=== Kiro SSO Auth (Account ${accounts.length + 1}) ===\n`)
+
+                    if (!ssoStartUrl) {
+                      console.log('Enter your organization\'s SSO start URL')
+                      console.log('Example: https://my-org.awsapps.com/start\n')
+                      ssoStartUrl = await promptForSSOUrl()
+                    }
+
+                    const result = await (async (): Promise<
+                      KiroSSOTokenResult | { type: 'failed'; error: string }
+                    > => {
+                      try {
+                        const authData = await authorizeKiroSSO(ssoStartUrl!, region)
+                        const { url, waitForAuth } = await startIDCAuthServer(
+                          authData,
+                          config.auth_server_port_start,
+                          config.auth_server_port_range
+                        )
+
+                        console.log('OAuth URL:\n' + url + '\n')
+                        openBrowser(url)
+
+                        const res = await waitForAuth()
+                        
+                        if ('ssoStartUrl' in res) {
+                          return res as KiroSSOTokenResult
+                        } else {
+                          return {
+                            ...res,
+                            ssoStartUrl: ssoStartUrl!
+                          } as KiroSSOTokenResult
+                        }
+                      } catch (e: any) {
+                        return { type: 'failed' as const, error: e.message }
+                      }
+                    })()
+
+                    if ('type' in result && result.type === 'failed') {
+                      if (accounts.length === 0) {
+                        return resolve({
+                          url: '',
+                          instructions: `SSO authentication failed: ${result.error}`,
+                          method: 'auto',
+                          callback: async () => ({ type: 'failed' })
+                        })
+                      }
+
+                      console.warn(
+                        `[opencode-kiro-auth] Skipping failed account ${accounts.length + 1}: ${result.error}`
+                      )
+                      break
+                    }
+
+                    const successResult = result as KiroSSOTokenResult
+                    accounts.push(successResult)
+
+                    const isFirstAccount = accounts.length === 1
+                    const am = await AccountManager.loadFromDisk(config.account_selection_strategy)
+
+                    if (isFirstAccount && startFresh) {
+                      am.getAccounts().forEach((acc) => am.removeAccount(acc))
+                    }
+
+                    const acc: ManagedAccount = {
+                      id: generateAccountId(),
+                      email: successResult.email,
+                      authMethod: 'sso',
+                      region,
+                      clientId: successResult.clientId,
+                      clientSecret: successResult.clientSecret,
+                      ssoStartUrl: successResult.ssoStartUrl,
+                      refreshToken: successResult.refreshToken,
+                      accessToken: successResult.accessToken,
+                      expiresAt: successResult.expiresAt,
+                      rateLimitResetTime: 0,
+                      isHealthy: true
+                    }
+
+                    try {
+                      const u = await fetchUsageLimits({
+                        refresh: encodeRefreshToken({
+                          refreshToken: successResult.refreshToken,
+                          clientId: successResult.clientId,
+                          clientSecret: successResult.clientSecret,
+                          ssoStartUrl: successResult.ssoStartUrl,
+                          authMethod: 'sso'
+                        }),
+                        access: successResult.accessToken,
+                        expires: successResult.expiresAt,
+                        authMethod: 'sso',
+                        region,
+                        clientId: successResult.clientId,
+                        clientSecret: successResult.clientSecret,
+                        email: successResult.email,
+                        ssoStartUrl: successResult.ssoStartUrl
+                      })
+                      am.updateUsage(acc.id, {
+                        usedCount: u.usedCount,
+                        limitCount: u.limitCount,
+                        realEmail: u.email
+                      })
+                    } catch (e: any) {
+                      logger.warn(`Initial usage fetch failed: ${e.message}`, e)
+                    }
+
+                    am.addAccount(acc)
+                    await am.saveToDisk()
+
+                    showToast(
+                      `Account ${accounts.length} authenticated via SSO${successResult.email ? ` (${successResult.email})` : ''}`,
+                      'success'
+                    )
+
+                    let currentAccountCount = accounts.length
+                    try {
+                      const currentStorage = await AccountManager.loadFromDisk(
+                        config.account_selection_strategy
+                      )
+                      currentAccountCount = currentStorage.getAccountCount()
+                    } catch {}
+
+                    const addAnother = await promptAddAnotherAccount(currentAccountCount)
+                    if (!addAnother) {
+                      break
+                    }
+
+                    ssoStartUrl = undefined
+                  }
+
+                  const primary = accounts[0]
+                  if (!primary) {
+                    return resolve({
+                      url: '',
+                      instructions: 'SSO authentication cancelled',
+                      method: 'auto',
+                      callback: async () => ({ type: 'failed' })
+                    })
+                  }
+
+                  let actualAccountCount = accounts.length
+                  try {
+                    const finalStorage = await AccountManager.loadFromDisk(
+                      config.account_selection_strategy
+                    )
+                    actualAccountCount = finalStorage.getAccountCount()
+                  } catch {}
+
+                  return resolve({
+                    url: '',
+                    instructions: `SSO multi-account setup complete (${actualAccountCount} account(s)).`,
+                    method: 'auto',
+                    callback: async () => ({ type: 'success', key: primary.accessToken })
+                  })
+                }
+
+                if (!ssoStartUrl) {
+                  return resolve({
+                    url: '',
+                    instructions: 'SSO start URL required. Configure in kiro.json or provide during CLI login.',
+                    method: 'auto',
+                    callback: async () => ({ type: 'failed' })
+                  })
+                }
+
+                try {
+                  const authData = await authorizeKiroSSO(ssoStartUrl, region)
+                  const { url, waitForAuth } = await startIDCAuthServer(
+                    authData,
+                    config.auth_server_port_start,
+                    config.auth_server_port_range
+                  )
+                  openBrowser(url)
+                  resolve({
+                    url,
+                    instructions: `Open this URL to continue: ${url}`,
+                    method: 'auto',
+                    callback: async () => {
+                      try {
+                        const res = await waitForAuth()
+                        const resultSsoUrl = 'ssoStartUrl' in res ? res.ssoStartUrl : ssoStartUrl
+                        const am = await AccountManager.loadFromDisk(
+                          config.account_selection_strategy
+                        )
+                        const acc: ManagedAccount = {
+                          id: generateAccountId(),
+                          email: res.email,
+                          authMethod: 'sso',
+                          region,
+                          clientId: res.clientId,
+                          clientSecret: res.clientSecret,
+                          ssoStartUrl: resultSsoUrl,
+                          refreshToken: res.refreshToken,
+                          accessToken: res.accessToken,
+                          expiresAt: res.expiresAt,
+                          rateLimitResetTime: 0,
+                          isHealthy: true
+                        }
+                        try {
+                          const u = await fetchUsageLimits({
+                            refresh: encodeRefreshToken({
+                              refreshToken: res.refreshToken,
+                              clientId: res.clientId,
+                              clientSecret: res.clientSecret,
+                              ssoStartUrl: resultSsoUrl,
+                              authMethod: 'sso'
+                            }),
+                            access: res.accessToken,
+                            expires: res.expiresAt,
+                            authMethod: 'sso',
+                            region,
+                            clientId: res.clientId,
+                            clientSecret: res.clientSecret,
+                            email: res.email,
+                            ssoStartUrl: resultSsoUrl
+                          })
+                          am.updateUsage(acc.id, {
+                            usedCount: u.usedCount,
+                            limitCount: u.limitCount,
+                            realEmail: u.email
+                          })
+                        } catch (e: any) {
+                          logger.warn(`Initial usage fetch failed: ${e.message}`, e)
+                        }
+                        am.addAccount(acc)
+                        await am.saveToDisk()
+                        showToast(`Successfully logged in via SSO as ${res.email}`, 'success')
+                        return { type: 'success', key: res.accessToken }
+                      } catch (e: any) {
+                        logger.error(`SSO login failed: ${e.message}`, e)
+                        showToast(`SSO login failed: ${e.message}`, 'error')
+                        return { type: 'failed' }
+                      }
+                    }
+                  })
+                } catch (e: any) {
+                  logger.error(`SSO authorization failed: ${e.message}`, e)
+                  showToast(`SSO authorization failed: ${e.message}`, 'error')
+                  resolve({
+                    url: '',
+                    instructions: 'SSO authorization failed',
                     method: 'auto',
                     callback: async () => ({ type: 'failed' })
                   })
