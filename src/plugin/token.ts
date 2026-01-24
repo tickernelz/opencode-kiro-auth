@@ -5,16 +5,16 @@ import type { KiroAuthDetails, RefreshParts } from './types'
 
 export async function refreshAccessToken(auth: KiroAuthDetails): Promise<KiroAuthDetails> {
   const p = decodeRefreshToken(auth.refresh)
-  const isIdc = auth.authMethod === 'idc'
-  const url = isIdc
+  const isSsoOidc = auth.authMethod === 'idc' || auth.authMethod === 'identity-center'
+  const url = isSsoOidc
     ? `https://oidc.${auth.region}.amazonaws.com/token`
     : `https://prod.${auth.region}.auth.desktop.kiro.dev/refreshToken`
 
-  if (isIdc && (!p.clientId || !p.clientSecret)) {
+  if (isSsoOidc && (!p.clientId || !p.clientSecret)) {
     throw new KiroTokenRefreshError('Missing creds', 'MISSING_CREDENTIALS')
   }
 
-  const requestBody: any = isIdc
+  const requestBody: any = isSsoOidc
     ? {
         refreshToken: p.refreshToken,
         clientId: p.clientId,
@@ -29,7 +29,7 @@ export async function refreshAccessToken(auth: KiroAuthDetails): Promise<KiroAut
     .createHash('sha256')
     .update(auth.profileArn || auth.clientId || 'KIRO_DEFAULT_MACHINE')
     .digest('hex')
-  const ua = isIdc ? 'aws-sdk-js/1.0.0' : `KiroIDE-0.7.45-${machineId}`
+  const ua = isSsoOidc ? 'aws-sdk-js/1.0.0' : `KiroIDE-0.7.45-${machineId}`
 
   try {
     const res = await fetch(url, {
@@ -68,6 +68,7 @@ export async function refreshAccessToken(auth: KiroAuthDetails): Promise<KiroAut
       refreshToken: d.refresh_token || d.refreshToken || p.refreshToken,
       clientId: p.clientId,
       clientSecret: p.clientSecret,
+      startUrl: p.startUrl,
       authMethod: auth.authMethod
     }
 

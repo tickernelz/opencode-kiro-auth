@@ -1,16 +1,16 @@
 import { exec } from 'node:child_process'
 import { KIRO_CONSTANTS } from './constants'
-import { accessTokenExpired } from './kiro/auth'
+import { accessTokenExpired, encodeRefreshToken } from './kiro/auth'
 import type { KiroIDCTokenResult } from './kiro/oauth-idc'
-import { authorizeKiroIDC } from './kiro/oauth-idc'
+import { authorizeKiroIDC, authorizeKiroIdentityCenter } from './kiro/oauth-idc'
 import { AccountManager, createDeterministicAccountId } from './plugin/accounts'
-import { promptAddAnotherAccount, promptLoginMode } from './plugin/cli'
+import { promptAddAnotherAccount, promptAuthProvider, promptLoginMode, promptRegion, promptStartUrl } from './plugin/cli'
 import { loadConfig } from './plugin/config'
 import { KiroTokenRefreshError } from './plugin/errors'
 import * as logger from './plugin/logger'
 import { transformToCodeWhisperer } from './plugin/request'
 import { parseEventStream } from './plugin/response'
-import { startIDCAuthServer } from './plugin/server'
+import { startIDCAuthServer, startIdentityCenterAuthServer } from './plugin/server'
 import { migrateJsonToSqlite } from './plugin/storage/migration'
 import { kiroDb } from './plugin/storage/sqlite'
 import { transformKiroStream } from './plugin/streaming'
@@ -386,150 +386,147 @@ export const createKiroPlugin =
             authorize: async (inputs?: any) =>
               new Promise(async (resolve) => {
                 const region = config.default_region
-                if (inputs) {
-                  const accounts: KiroIDCTokenResult[] = []
-                  let startFresh = true
-                  const existingAm = await AccountManager.loadFromDisk(
-                    config.account_selection_strategy
-                  )
-                  const idcAccs = existingAm.getAccounts().filter((a) => a.authMethod === 'idc')
-                  if (idcAccs.length > 0) {
-                    const existingAccounts = idcAccs.map((acc, idx) => ({
-                      email: acc.email,
-                      index: idx
-                    }))
-                    startFresh = (await promptLoginMode(existingAccounts)) === 'fresh'
-                  }
-                  while (true) {
-                    try {
-                      const authData = await authorizeKiroIDC(region)
-                      const { url, waitForAuth } = await startIDCAuthServer(
+                // Always use interactive mode - prompt for account type
+                const accounts: any[] = []
+                let startFresh = true
+                const existingAm = await AccountManager.loadFromDisk(
+                  config.account_selection_strategy
+                )
+                const allAccs = existingAm.getAccounts()
+                if (allAccs.length > 0) {
+                  const existingAccounts = allAccs.map((acc, idx) => ({
+                    email: acc.email,
+                    index: idx
+                  }))
+                  startFresh = (await promptLoginMode(existingAccounts)) === 'fresh'
+                }
+                
+                // Prompt for auth provider type
+                const authProvider = await promptAuthProvider()
+                
+                while (true) {
+                  try {
+                    let authData: any
+                    let authMethod: 'idc' | 'identity-center'
+                    let startUrl: string | undefined
+                    let serverResult: any
+                    
+                    if (authProvider === 'builder-id') {
+                      authData = await authorizeKiroIDC(region)
+                      authMethod = 'idc'
+                      serverResult = await startIDCAuthServer(
                         authData,
                         config.auth_server_port_start,
                         config.auth_server_port_range
                       )
-                      openBrowser(url)
-                      const res = await waitForAuth()
-                      const u = await fetchUsageLimits({
+                    } else {
+                      // Identity Center
+                      startUrl = await promptStartUrl()
+                      const selectedRegion = await promptRegion()
+                      authData = await authorizeKiroIdentityCenter(startUrl, selectedRegion)
+                      authMethod = 'identity-center'
+                      serverResult = await startIdentityCenterAuthServer(
+                        authData,
+                        config.auth_server_port_start,
+                        config.auth_server_port_range
+                      )
+                    }
+                    
+                    const { url, waitForAuth } = serverResult
+                    openBrowser(url)
+                    const res = await waitForAuth()
+                    
+                    // Try to fetch usage limits and email
+                    let u: any = { usedCount: 0, limitCount: 0, email: res.email }
+                    try {
+                      u = await fetchUsageLimits({
                         refresh: '',
                         access: res.accessToken,
                         expires: res.expiresAt,
-                        authMethod: 'idc',
-                        region,
+                        authMethod,
+                        region: authData.region,
                         clientId: res.clientId,
                         clientSecret: res.clientSecret
                       })
+                      // If fetchUsageLimits succeeds but doesn't return email, use fallback
                       if (!u.email) {
-                        console.log('\n[Error] Failed to fetch account email. Skipping...\n')
-                        continue
+                        u.email = res.email
                       }
-                      accounts.push(res as KiroIDCTokenResult)
-                      const am = await AccountManager.loadFromDisk(
-                        config.account_selection_strategy
-                      )
-                      if (accounts.length === 1 && startFresh)
-                        am.getAccounts()
-                          .filter((a) => a.authMethod === 'idc')
-                          .forEach((a) => am.removeAccount(a))
-                      const id = createDeterministicAccountId(u.email, 'idc', res.clientId)
-                      const acc: ManagedAccount = {
-                        id,
-                        email: u.email,
-                        authMethod: 'idc',
-                        region,
-                        clientId: res.clientId,
-                        clientSecret: res.clientSecret,
-                        refreshToken: res.refreshToken,
-                        accessToken: res.accessToken,
-                        expiresAt: res.expiresAt,
-                        rateLimitResetTime: 0,
-                        isHealthy: true,
-                        failCount: 0
-                      }
-                      am.addAccount(acc)
-                      am.updateUsage(id, { usedCount: u.usedCount, limitCount: u.limitCount })
-                      await am.saveToDisk()
-                      console.log(
-                        `\n[Success] Added: ${u.email} (Quota: ${u.usedCount}/${u.limitCount})\n`
-                      )
-                      if (!(await promptAddAnotherAccount(am.getAccountCount()))) break
                     } catch (e: any) {
-                      console.log(`\n[Error] Login failed: ${e.message}\n`)
-                      break
+                      // If fetchUsageLimits fails, use fallback email and continue
+                      console.log(`\n[Warning] Could not fetch usage limits: ${e.message}`)
+                      console.log('[Info] Continuing with fallback email...\n')
+                      u.email = res.email
                     }
+                    
+                    if (!u.email) {
+                      console.log('\n[Error] Failed to determine account email. Skipping...\n')
+                      continue
+                    }
+                    accounts.push(res)
+                    const am = await AccountManager.loadFromDisk(
+                      config.account_selection_strategy
+                    )
+                    if (accounts.length === 1 && startFresh)
+                      am.getAccounts().forEach((a) => am.removeAccount(a))
+                    const id = createDeterministicAccountId(
+                      u.email, 
+                      authMethod, 
+                      res.clientId,
+                      authMethod === 'identity-center' ? startUrl : undefined
+                    )
+                    // Encode the refresh token with all necessary information
+                    const refreshParts: any = {
+                      refreshToken: res.refreshToken,
+                      clientId: res.clientId,
+                      clientSecret: res.clientSecret,
+                      authMethod
+                    }
+                    if (authMethod === 'identity-center' && startUrl) {
+                      refreshParts.startUrl = startUrl
+                    }
+                    
+                    const acc: ManagedAccount = {
+                      id,
+                      email: u.email,
+                      authMethod,
+                      region: authData.region,
+                      clientId: res.clientId,
+                      clientSecret: res.clientSecret,
+                      refreshToken: encodeRefreshToken(refreshParts),
+                      accessToken: res.accessToken,
+                      expiresAt: res.expiresAt,
+                      rateLimitResetTime: 0,
+                      isHealthy: true,
+                      failCount: 0
+                    }
+                    if (authMethod === 'identity-center' && startUrl) {
+                      acc.profileArn = startUrl
+                    }
+                    am.addAccount(acc)
+                    am.updateUsage(id, { usedCount: u.usedCount, limitCount: u.limitCount })
+                    await am.saveToDisk()
+                    console.log(
+                      `\n[Success] Added: ${u.email} (Quota: ${u.usedCount}/${u.limitCount})\n`
+                    )
+                    if (!(await promptAddAnotherAccount(am.getAccountCount()))) break
+                  } catch (e: any) {
+                    console.log(`\n[Error] Login failed: ${e.message}\n`)
+                    break
                   }
-                  const finalAm = await AccountManager.loadFromDisk(
-                    config.account_selection_strategy
-                  )
-                  return resolve({
-                    url: '',
-                    instructions: `Complete (${finalAm.getAccountCount()} accounts).`,
-                    method: 'auto',
-                    callback: async () => ({
-                      type: 'success',
-                      key: finalAm.getAccounts()[0]?.accessToken
-                    })
-                  })
                 }
-                try {
-                  const authData = await authorizeKiroIDC(region)
-                  const { url, waitForAuth } = await startIDCAuthServer(
-                    authData,
-                    config.auth_server_port_start,
-                    config.auth_server_port_range
-                  )
-                  openBrowser(url)
-                  resolve({
-                    url,
-                    instructions: `Open: ${url}`,
-                    method: 'auto',
-                    callback: async () => {
-                      try {
-                        const res = await waitForAuth(),
-                          am = await AccountManager.loadFromDisk(config.account_selection_strategy)
-                        const u = await fetchUsageLimits({
-                          refresh: '',
-                          access: res.accessToken,
-                          expires: res.expiresAt,
-                          authMethod: 'idc',
-                          region,
-                          clientId: res.clientId,
-                          clientSecret: res.clientSecret
-                        })
-                        if (!u.email) throw new Error('No email')
-                        const id = createDeterministicAccountId(u.email, 'idc', res.clientId)
-                        const acc: ManagedAccount = {
-                          id,
-                          email: u.email,
-                          authMethod: 'idc',
-                          region,
-                          clientId: res.clientId,
-                          clientSecret: res.clientSecret,
-                          refreshToken: res.refreshToken,
-                          accessToken: res.accessToken,
-                          expiresAt: res.expiresAt,
-                          rateLimitResetTime: 0,
-                          isHealthy: true,
-                          failCount: 0
-                        }
-                        am.addAccount(acc)
-                        if (u.email)
-                          am.updateUsage(id, { usedCount: u.usedCount, limitCount: u.limitCount })
-                        await am.saveToDisk()
-                        return { type: 'success', key: res.accessToken }
-                      } catch (e: any) {
-                        return { type: 'failed' }
-                      }
-                    }
+                const finalAm = await AccountManager.loadFromDisk(
+                  config.account_selection_strategy
+                )
+                return resolve({
+                  url: '',
+                  instructions: `Complete (${finalAm.getAccountCount()} accounts).`,
+                  method: 'auto',
+                  callback: async () => ({
+                    type: 'success',
+                    key: finalAm.getAccounts()[0]?.accessToken
                   })
-                } catch (e: any) {
-                  resolve({
-                    url: '',
-                    instructions: 'Failed',
-                    method: 'auto',
-                    callback: async () => ({ type: 'failed' })
-                  })
-                }
+                })
               })
           }
         ]

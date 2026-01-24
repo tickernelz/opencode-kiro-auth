@@ -1,4 +1,4 @@
-export type KiroAuthMethod = 'idc' | 'desktop'
+export type KiroAuthMethod = 'idc' | 'identity-center' | 'desktop'
 export type KiroRegion = 'us-east-1' | 'us-west-2'
 
 export interface KiroAuthDetails {
@@ -19,6 +19,7 @@ export interface RefreshParts {
   clientSecret?: string
   profileArn?: string
   authMethod?: KiroAuthMethod
+  startUrl?: string
 }
 
 export interface ManagedAccount {

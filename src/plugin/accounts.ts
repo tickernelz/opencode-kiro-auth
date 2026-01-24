@@ -193,11 +193,15 @@ export class AccountManager {
     for (const a of this.accounts) kiroDb.upsertAccount(a)
   }
   toAuthDetails(a: ManagedAccount): KiroAuthDetails {
+    // The refreshToken in ManagedAccount is already encoded, so decode it first
+    const decoded = decodeRefreshToken(a.refreshToken)
+    
     const p: RefreshParts = {
-      refreshToken: a.refreshToken,
+      refreshToken: decoded.refreshToken,
       profileArn: a.profileArn,
       clientId: a.clientId,
       clientSecret: a.clientSecret,
+      startUrl: decoded.startUrl,
       authMethod: a.authMethod
     }
     return {
