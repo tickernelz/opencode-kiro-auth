@@ -91,6 +91,7 @@ export const createKiroPlugin =
               let retry = 0,
                 iterations = 0,
                 reductionFactor = 1.0
+              let triedEmptySync = false
               const startTime = Date.now(),
                 maxIterations = config.max_request_iterations,
                 timeoutMs = config.request_timeout_ms
@@ -99,7 +100,16 @@ export const createKiroPlugin =
                 if (iterations > maxIterations)
                   throw new Error(`Exceeded max iterations (${maxIterations})`)
                 if (Date.now() - startTime > timeoutMs) throw new Error('Request timeout')
-                const count = am.getAccountCount()
+                let count = am.getAccountCount()
+                if (count === 0 && config.auto_sync_kiro_cli && !triedEmptySync) {
+                  triedEmptySync = true
+                  await syncFromKiroCli()
+                  const refreshedAm = await AccountManager.loadFromDisk(
+                    config.account_selection_strategy
+                  )
+                  for (const a of refreshedAm.getAccounts()) am.addAccount(a)
+                  count = am.getAccountCount()
+                }
                 if (count === 0) throw new Error('No accounts')
                 let acc = am.getCurrentOrNext()
                 if (!acc) {

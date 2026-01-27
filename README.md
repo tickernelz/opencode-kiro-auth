@@ -1,4 +1,5 @@
 # OpenCode Kiro Auth Plugin
+
 [![npm version](https://img.shields.io/npm/v/@zhafron/opencode-kiro-auth)](https://www.npmjs.com/package/@zhafron/opencode-kiro-auth)
 [![npm downloads](https://img.shields.io/npm/dm/@zhafron/opencode-kiro-auth)](https://www.npmjs.com/package/@zhafron/opencode-kiro-auth)
 [![license](https://img.shields.io/npm/l/@zhafron/opencode-kiro-auth)](https://www.npmjs.com/package/@zhafron/opencode-kiro-auth)
@@ -71,11 +72,24 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
 1. **Authentication via Kiro CLI (Recommended)**:
    - Perform login directly in your terminal using `kiro-cli login`.
    - The plugin will automatically detect and import your session on startup.
+   - For AWS IAM Identity Center (SSO/IDC), the plugin imports both the token and device registration (OIDC client credentials) from the `kiro-cli` database.
 2. **Direct Authentication**:
    - Run `opencode auth login`.
    - Select `Other`, type `kiro`, and press enter.
    - Follow the instructions for **AWS Builder ID (IDC)**.
 3. Configuration will be automatically managed at `~/.config/opencode/kiro.db`.
+
+## Troubleshooting
+
+### Error: No accounts
+
+This happens when the plugin has no records in `~/.config/opencode/kiro.db`.
+
+1. Ensure `kiro-cli login` succeeds.
+2. Ensure `auto_sync_kiro_cli` is `true` in `~/.config/opencode/kiro.json`.
+3. Retry the request; the plugin will attempt a Kiro CLI sync when it detects zero accounts.
+
+Note for IDC/SSO (ODIC): the plugin may temporarily create an account with a placeholder email if it cannot fetch the real email during sync (e.g. offline). It will replace it with the real email once usage/email lookup succeeds.
 
 ## Configuration
 
@@ -118,10 +132,12 @@ The plugin supports extensive configuration options. Edit `~/.config/opencode/ki
 ## Storage
 
 **Linux/macOS:**
+
 - SQLite Database: `~/.config/opencode/kiro.db`
 - Plugin Config: `~/.config/opencode/kiro.json`
 
 **Windows:**
+
 - SQLite Database: `%APPDATA%\opencode\kiro.db`
 - Plugin Config: `%APPDATA%\opencode\kiro.json`
 
