@@ -308,7 +308,7 @@ export const createKiroPlugin =
                     } catch (e) {
                       // If we can't parse the error, use default message
                     }
-                    if (acc.failCount < 3) {
+                    if (acc.failCount < 5) {
                       const delay = 1000 * Math.pow(2, acc.failCount - 1)
                       showToast(
                         `Server Error (500): ${errorMessage}. Retrying in ${Math.ceil(delay / 1000)}s...`,
@@ -317,9 +317,10 @@ export const createKiroPlugin =
                       await sleep(delay)
                       continue
                     } else {
-                      acc.failCount = 0
+                      am.markUnhealthy(acc, `Server Error (500) after 5 attempts: ${errorMessage}`)
+                      await am.saveToDisk()
                       showToast(
-                        `Server Error (500): ${errorMessage}. Switching account...`,
+                        `Server Error (500): ${errorMessage}. Marking account as unhealthy and switching...`,
                         'warning'
                       )
                       continue
