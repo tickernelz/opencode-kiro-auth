@@ -7,6 +7,7 @@ import { AccountManager, createDeterministicAccountId } from './plugin/accounts'
 import { promptAddAnotherAccount, promptLoginMode } from './plugin/cli'
 import { loadConfig } from './plugin/config'
 import { KiroTokenRefreshError } from './plugin/errors'
+import { isPermanentError } from './plugin/health'
 import * as logger from './plugin/logger'
 import { transformToCodeWhisperer } from './plugin/request'
 import { parseEventStream } from './plugin/response'
@@ -221,8 +222,10 @@ export const createKiroPlugin =
                   }
                   if (res.ok) {
                     if (acc.failCount && acc.failCount > 0) {
-                      acc.failCount = 0
-                      kiroDb.upsertAccount(acc).catch(() => {})
+                      if (!isPermanentError(acc.unhealthyReason)) {
+                        acc.failCount = 0
+                        kiroDb.upsertAccount(acc).catch(() => {})
+                      }
                     }
                     if (config.usage_tracking_enabled) {
                       const sync = async (att = 0): Promise<void> => {

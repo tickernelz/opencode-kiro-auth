@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, promises as fs } from 'node:fs'
 import lockfile from 'proper-lockfile'
+import { isPermanentError } from '../health'
 import type { ManagedAccount } from '../types'
 
 const LOCK_OPTIONS = {
@@ -62,6 +63,9 @@ export function mergeAccounts(
     const existingAcc = accountMap.get(acc.id)
 
     if (existingAcc) {
+      const hasPermanentError =
+        isPermanentError(existingAcc.unhealthyReason) || isPermanentError(acc.unhealthyReason)
+
       accountMap.set(acc.id, {
         ...existingAcc,
         ...acc,
@@ -72,8 +76,8 @@ export function mergeAccounts(
           existingAcc.rateLimitResetTime || 0,
           acc.rateLimitResetTime || 0
         ),
-        isHealthy: existingAcc.isHealthy || acc.isHealthy,
-        failCount: Math.min(existingAcc.failCount || 0, acc.failCount || 0),
+        isHealthy: hasPermanentError ? false : existingAcc.isHealthy || acc.isHealthy,
+        failCount: Math.max(existingAcc.failCount || 0, acc.failCount || 0),
         lastSync: Math.max(existingAcc.lastSync || 0, acc.lastSync || 0)
       })
     } else {

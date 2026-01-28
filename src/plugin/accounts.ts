@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { decodeRefreshToken, encodeRefreshToken } from '../kiro/auth'
+import { isPermanentError } from './health'
+import * as logger from './logger'
 import { kiroDb } from './storage/sqlite'
 import { writeToKiroCli } from './sync/kiro-cli'
 import type {
@@ -84,6 +86,9 @@ export class AccountManager {
     const now = Date.now()
     const available = this.accounts.filter((a) => {
       if (!a.isHealthy) {
+        if (isPermanentError(a.unhealthyReason)) {
+          return false
+        }
         if (a.failCount < 10 && a.recoveryTime && now >= a.recoveryTime) {
           a.isHealthy = true
           delete a.unhealthyReason
@@ -109,7 +114,7 @@ export class AccountManager {
     }
     if (!selected) {
       const fallback = this.accounts
-        .filter((a) => !a.isHealthy && a.failCount < 10)
+        .filter((a) => !a.isHealthy && a.failCount < 10 && !isPermanentError(a.unhealthyReason))
         .sort(
           (a, b) => (a.usedCount || 0) - (b.usedCount || 0) || (a.lastUsed || 0) - (b.lastUsed || 0)
         )[0]
@@ -134,7 +139,9 @@ export class AccountManager {
       a.usedCount = meta.usedCount
       a.limitCount = meta.limitCount
       if (meta.email) a.email = meta.email
-      a.failCount = 0
+      if (!isPermanentError(a.unhealthyReason)) {
+        a.failCount = 0
+      }
       kiroDb.upsertAccount(a).catch(() => {})
     }
   }
@@ -165,6 +172,9 @@ export class AccountManager {
       if (p.profileArn) acc.profileArn = p.profileArn
       if (p.clientId) acc.clientId = p.clientId
       acc.failCount = 0
+      acc.isHealthy = true
+      delete acc.unhealthyReason
+      delete acc.recoveryTime
       kiroDb.upsertAccount(acc).catch(() => {})
       writeToKiroCli(acc).catch(() => {})
     }
@@ -178,7 +188,21 @@ export class AccountManager {
   }
   markUnhealthy(a: ManagedAccount, reason: string, recovery?: number): void {
     const acc = this.accounts.find((x) => x.id === a.id)
-    if (acc) {
+    if (!acc) return
+
+    const isPermanent = isPermanentError(reason)
+
+    if (isPermanent) {
+      logger.warn('Account marked as permanently unhealthy', {
+        email: acc.email,
+        reason,
+        accountId: acc.id
+      })
+      acc.failCount = 10
+      acc.isHealthy = false
+      acc.unhealthyReason = reason
+      delete acc.recoveryTime
+    } else {
       acc.failCount = (acc.failCount || 0) + 1
       acc.unhealthyReason = reason
       acc.lastUsed = Date.now()
@@ -186,8 +210,9 @@ export class AccountManager {
         acc.isHealthy = false
         acc.recoveryTime = recovery || Date.now() + 3600000
       }
-      kiroDb.upsertAccount(acc).catch(() => {})
     }
+
+    kiroDb.upsertAccount(acc).catch(() => {})
   }
   async saveToDisk(): Promise<void> {
     await kiroDb.batchUpsertAccounts(this.accounts)
