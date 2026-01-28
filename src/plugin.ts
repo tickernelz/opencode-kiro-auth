@@ -169,7 +169,8 @@ export const createKiroPlugin =
                       (e.code === 'ExpiredTokenException' ||
                         e.code === 'InvalidTokenException' ||
                         e.code === 'HTTP_401' ||
-                        e.code === 'HTTP_403')
+                        e.code === 'HTTP_403' ||
+                        e.message.includes('Invalid refresh token provided'))
                     ) {
                       am.markUnhealthy(acc, e.message)
                       await am.saveToDisk()
@@ -233,6 +234,14 @@ export const createKiroPlugin =
                           if (att < config.usage_sync_max_retries) {
                             await sleep(1000 * Math.pow(2, att))
                             return sync(att + 1)
+                          }
+                          if (
+                            e.message?.includes('403') ||
+                            e.message?.includes('invalid') ||
+                            e.message?.includes('bearer token')
+                          ) {
+                            am.markUnhealthy(acc!, e.message)
+                            am.saveToDisk().catch(() => {})
                           }
                         }
                       }
