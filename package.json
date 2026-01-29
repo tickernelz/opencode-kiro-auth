@@ -8,7 +8,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "format": "prettier --write 'src/**/*.ts'",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepare": "husky"
   },
   "keywords": [
     "opencode",
@@ -38,6 +39,8 @@
     "@types/node": "^20.0.0",
     "@types/proper-lockfile": "^4.1.4",
     "bun-types": "^1.3.6",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "prettier": "^3.4.2",
     "prettier-plugin-organize-imports": "^4.1.0",
     "typescript": "^5.7.3"
@@ -53,5 +56,10 @@
     "dist",
     "package.json",
     "README.md"
-  ]
+  ],
+  "lint-staged": {
+    "*.ts": [
+      "prettier --write"
+    ]
+  }
 }
