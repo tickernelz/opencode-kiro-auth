@@ -1,14 +1,19 @@
 import crypto from 'node:crypto'
 import { decodeRefreshToken, encodeRefreshToken } from '../kiro/auth'
 import { KiroTokenRefreshError } from './errors'
+import * as logger from './logger'
+import { getIdcRegionFromState } from './sync/idc-region'
 import type { KiroAuthDetails, RefreshParts } from './types'
 
 export async function refreshAccessToken(auth: KiroAuthDetails): Promise<KiroAuthDetails> {
   const p = decodeRefreshToken(auth.refresh)
   const isIdc = auth.authMethod === 'idc'
+  const idcRegion = isIdc ? getIdcRegionFromState() : undefined
+  const profileRegion = auth.profileArn?.split(':')[3]
+  const authRegion = idcRegion || profileRegion || auth.region
   const url = isIdc
-    ? `https://oidc.${auth.region}.amazonaws.com/token`
-    : `https://prod.${auth.region}.auth.desktop.kiro.dev/refreshToken`
+    ? `https://oidc.${authRegion}.amazonaws.com/token`
+    : `https://prod.${authRegion}.auth.desktop.kiro.dev/refreshToken`
 
   if (isIdc && (!p.clientId || !p.clientSecret)) {
     throw new KiroTokenRefreshError('Missing creds', 'MISSING_CREDENTIALS')
@@ -52,6 +57,11 @@ export async function refreshAccessToken(auth: KiroAuthDetails): Promise<KiroAut
         data = JSON.parse(txt)
       } catch {
         data = { message: txt }
+      }
+      const errType = res.headers.get('x-amzn-errortype')
+      if (errType || txt) {
+        const detail = errType ? `${errType} ${txt}`.trim() : txt
+        logger.warn(`Kiro token refresh error: ${detail}`)
       }
       throw new KiroTokenRefreshError(
         `Refresh failed: ${data.message || data.error_description || txt}`,
