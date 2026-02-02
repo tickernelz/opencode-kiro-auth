@@ -79,16 +79,16 @@ export async function startIDCAuthServer(
 
     const poll = async () => {
       try {
-        const body = {
-          grantType: 'urn:ietf:params:oauth:grant-type:device_code',
-          deviceCode: authData.deviceCode,
-          clientId: authData.clientId,
-          clientSecret: authData.clientSecret
-        }
+        const body = new URLSearchParams({
+          grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+          device_code: authData.deviceCode,
+          client_id: authData.clientId,
+          client_secret: authData.clientSecret
+        }).toString()
         const res = await fetch(`https://oidc.${authData.region}.amazonaws.com/token`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body
         })
 
         const responseText = await res.text()

@@ -35,6 +35,18 @@ export const createKiroPlugin =
       config: async (opencodeConfig: OpencodeConfig) => {
         const baseURL = getKiroOpenAICompatibleBaseURL(config.default_region)
         ensureProviderBaseURL(opencodeConfig, id, baseURL)
+
+        // OpenCode wires `provider.<id>.options` into the bundled @ai-sdk/openai-compatible.
+        // We need to ensure requests to /chat/completions are intercepted and translated to
+        // CodeWhisperer/Kiro APIs.
+        const provider = opencodeConfig.provider?.[id]
+        if (provider) {
+          provider.options = provider.options || {}
+          if (!provider.options.fetch) {
+            provider.options.fetch = (input: any, init?: any) =>
+              requestHandler.handle(input, init, showToast)
+          }
+        }
       },
       auth: {
         provider: id,
