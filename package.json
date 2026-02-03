@@ -49,6 +49,7 @@
     "type": "plugin",
     "hooks": [
       "auth",
+      "config",
       "event"
     ]
   },
