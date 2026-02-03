@@ -166,7 +166,9 @@ export async function syncFromKiroCli() {
           existingById &&
           existingById.is_healthy === 1 &&
           existingById.expires_at >= cliExpiresAt &&
-          existingById.region === region
+          existingById.region === region &&
+          (existingById.fail_count || 0) === 0 &&
+          !existingById.unhealthy_reason
         )
           continue
 
