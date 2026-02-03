@@ -1,9 +1,11 @@
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
+import { normalizeRegion } from '../../constants.js'
 import { createDeterministicAccountId } from '../accounts'
 import * as logger from '../logger'
 import { kiroDb } from '../storage/sqlite'
 import { fetchUsageLimits } from '../usage'
+import { setIdcRegionFromState } from './idc-region'
 import {
   findClientCredsRecursive,
   getCliDbPath,
@@ -11,6 +13,19 @@ import {
   normalizeExpiresAt,
   safeJsonParse
 } from './kiro-cli-parser'
+
+function extractProfileArnFromAccessToken(accessToken: string | undefined): string | undefined {
+  if (!accessToken || !accessToken.includes('.')) return undefined
+  const parts = accessToken.split('.')
+  if (parts.length < 2 || !parts[1]) return undefined
+  try {
+    const payload = Buffer.from(parts[1], 'base64').toString('utf8')
+    const data = JSON.parse(payload)
+    return data.profileArn || data.profile_arn || data['profile_arn'] || undefined
+  } catch {
+    return undefined
+  }
+}
 
 export async function syncFromKiroCli() {
   const dbPath = getCliDbPath()
@@ -20,25 +35,80 @@ export async function syncFromKiroCli() {
     cliDb.run('PRAGMA busy_timeout = 5000')
     const rows = cliDb.prepare('SELECT key, value FROM auth_kv').all() as any[]
 
-    const deviceRegRow = rows.find(
+    let profileArnFromState: string | undefined
+    try {
+      const idcRegionRow = cliDb
+        .prepare('SELECT value FROM state WHERE key = ?')
+        .get('auth.idc.region') as { value?: string } | undefined
+      const parsedRegion = safeJsonParse(idcRegionRow?.value)
+      if (typeof parsedRegion === 'string') {
+        setIdcRegionFromState(parsedRegion)
+      }
+      const profileRow = cliDb
+        .prepare('SELECT value FROM state WHERE key = ?')
+        .get('api.codewhisperer.profile') as { value?: string } | undefined
+      const profile = safeJsonParse(profileRow?.value)
+      if (profile && typeof profile.arn === 'string') {
+        profileArnFromState = profile.arn
+      }
+    } catch {
+      setIdcRegionFromState(undefined)
+    }
+
+    const tokenRows = rows.filter((r) => typeof r?.key === 'string' && r.key.includes(':token'))
+    const parsedTokens = tokenRows
+      .map((row) => {
+        const data = safeJsonParse(row.value)
+        const expiresAt = normalizeExpiresAt(data?.expires_at ?? data?.expiresAt)
+        return { row, data, expiresAt }
+      })
+      .filter((t) => t.data)
+
+    const now = Date.now()
+    const validTokens = parsedTokens.filter((t) => t.expiresAt > now)
+    const candidates = validTokens.length ? validTokens : parsedTokens
+
+    let tokenRowsToImport = tokenRows
+    if (candidates.length > 0) {
+      const maxExpiresAt = Math.max(...candidates.map((t) => t.expiresAt || 0))
+      tokenRowsToImport = candidates.filter((t) => t.expiresAt === maxExpiresAt).map((t) => t.row)
+    }
+
+    const deviceRegRows = rows.filter(
       (r) => typeof r?.key === 'string' && r.key.includes('device-registration')
     )
-    const deviceReg = safeJsonParse(deviceRegRow?.value)
-    const regCreds = deviceReg ? findClientCredsRecursive(deviceReg) : {}
+    const deviceRegByKey = new Map<string, { clientId?: string; clientSecret?: string }>()
+    for (const row of deviceRegRows) {
+      const deviceReg = safeJsonParse(row.value)
+      const regCreds = deviceReg ? findClientCredsRecursive(deviceReg) : {}
+      if (regCreds.clientId && regCreds.clientSecret) {
+        const baseKey = row.key.replace(':device-registration', '')
+        deviceRegByKey.set(baseKey, regCreds)
+      }
+    }
 
-    for (const row of rows) {
+    const importedIds = new Set<string>()
+
+    for (const row of tokenRowsToImport) {
       if (row.key.includes(':token')) {
         const data = safeJsonParse(row.value)
         if (!data) continue
 
-        const isIdc = row.key.includes('odic')
+        const isIdc = row.key.includes('odic') || row.key.includes('oidc')
         const authMethod = isIdc ? 'idc' : 'desktop'
-        const region = data.region || 'us-east-1'
-        const profileArn = data.profile_arn || data.profileArn
-
         const accessToken = data.access_token || data.accessToken || ''
+        const profileArn = data.profile_arn || data.profileArn || profileArnFromState
+        const regionFromProfile = profileArn?.split(':')[3]
+        const region = normalizeRegion(regionFromProfile || data.region)
         const refreshToken = data.refresh_token || data.refreshToken
         if (!refreshToken) continue
+
+        const baseKey = row.key.replace(':token', '')
+        const regCreds =
+          deviceRegByKey.get(baseKey) ||
+          deviceRegByKey.get(baseKey.replace('kirocli', 'codewhisperer')) ||
+          deviceRegByKey.get(baseKey.replace('codewhisperer', 'kirocli')) ||
+          {}
 
         const clientId = data.client_id || data.clientId || (isIdc ? regCreds.clientId : undefined)
         const clientSecret =
@@ -108,7 +178,8 @@ export async function syncFromKiroCli() {
         if (
           existingById &&
           existingById.is_healthy === 1 &&
-          existingById.expires_at >= cliExpiresAt
+          existingById.expires_at >= cliExpiresAt &&
+          existingById.region === region
         )
           continue
 
@@ -165,6 +236,19 @@ export async function syncFromKiroCli() {
           limitCount,
           lastSync: Date.now()
         })
+        importedIds.add(id)
+      }
+    }
+
+    const existing = kiroDb.getAccounts()
+    for (const acc of existing) {
+      if (
+        typeof acc?.email === 'string' &&
+        acc.email.endsWith('@awsapps.local') &&
+        acc.auth_method === 'idc' &&
+        !importedIds.has(acc.id)
+      ) {
+        await kiroDb.deleteAccount(acc.id)
       }
     }
     cliDb.close()

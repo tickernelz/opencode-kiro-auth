@@ -100,7 +100,6 @@ export class RequestHandler {
 
       try {
         const res = await fetch(prep.url, prep.init)
-
         if (apiTimestamp) {
           this.logResponse(res, prep, apiTimestamp)
         }
@@ -135,7 +134,7 @@ export class RequestHandler {
           continue
         }
 
-        this.logError(prep, res, acc, apiTimestamp)
+        await this.logError(prep, res, acc, apiTimestamp)
         throw new Error(`Kiro Error: ${res.status}`)
       } catch (e) {
         const networkResult = await this.errorHandler.handleNetworkError(
@@ -189,11 +188,12 @@ export class RequestHandler {
     try {
       b = prep.init.body ? JSON.parse(prep.init.body as string) : null
     } catch {}
+    const headers = this.redactHeaders(prep.init.headers)
     logger.logApiRequest(
       {
         url: prep.url,
         method: prep.init.method,
-        headers: prep.init.headers,
+        headers,
         body: b,
         conversationId: prep.conversationId,
         model: prep.effectiveModel,
@@ -220,20 +220,28 @@ export class RequestHandler {
     )
   }
 
-  private logError(
+  private async logError(
     prep: PreparedRequest,
     res: Response,
     acc: ManagedAccount,
     apiTimestamp: string | null
-  ): void {
+  ): Promise<void> {
     const h: any = {}
     res.headers.forEach((v, k) => {
       h[k] = v
     })
+    let errorBody: string | undefined
+    try {
+      errorBody = await res.text()
+      if (errorBody) {
+        errorBody = errorBody.replace(/\s+/g, ' ').trim().slice(0, 1000)
+      }
+    } catch {}
     const rData = {
       status: res.status,
       statusText: res.statusText,
       headers: h,
+      body: errorBody,
       error: `Kiro Error: ${res.status}`,
       conversationId: prep.conversationId,
       model: prep.effectiveModel
@@ -242,12 +250,13 @@ export class RequestHandler {
     try {
       lastB = prep.init.body ? JSON.parse(prep.init.body as string) : null
     } catch {}
+    const headers = this.redactHeaders(prep.init.headers)
     if (!this.config.enable_log_api_request) {
       logger.logApiError(
         {
           url: prep.url,
           method: prep.init.method,
-          headers: prep.init.headers,
+          headers,
           body: lastB,
           conversationId: prep.conversationId,
           model: prep.effectiveModel,
@@ -257,6 +266,14 @@ export class RequestHandler {
         logger.getTimestamp()
       )
     }
+  }
+
+  private redactHeaders(headers: any): any {
+    if (!headers || typeof headers !== 'object') return headers
+    const clone = { ...headers }
+    if ('Authorization' in clone) clone.Authorization = 'REDACTED'
+    if ('authorization' in clone) clone.authorization = 'REDACTED'
+    return clone
   }
 
   private allAccountsPermanentlyUnhealthy(): boolean {
