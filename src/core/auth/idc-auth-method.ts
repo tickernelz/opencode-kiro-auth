@@ -1,7 +1,7 @@
 import { exec } from 'node:child_process'
 import type { AccountRepository } from '../../infrastructure/database/account-repository.js'
 import type { KiroIDCTokenResult } from '../../kiro/oauth-idc.js'
-import { authorizeKiroIDC } from '../../kiro/oauth-idc.js'
+import type { AccountManager } from '../../plugin/accounts.js'
 import { createDeterministicAccountId } from '../../plugin/accounts.js'
 import { promptAddAnotherAccount, promptDeleteAccount, promptLoginMode } from '../../plugin/cli.js'
 import * as logger from '../../plugin/logger.js'
@@ -26,7 +26,8 @@ const openBrowser = (url: string) => {
 export class IdcAuthMethod {
   constructor(
     private config: any,
-    private repository: AccountRepository
+    private repository: AccountRepository,
+    private accountManager: AccountManager
   ) {}
 
   async authorize(inputs?: any): Promise<{
@@ -90,9 +91,8 @@ export class IdcAuthMethod {
     }
     while (true) {
       try {
-        const authData = await authorizeKiroIDC(region)
         const { url, waitForAuth } = await startIDCAuthServer(
-          authData,
+          { defaultRegion: region, defaultStartUrl: this.config.builder_id_start_url },
           this.config.auth_server_port_start,
           this.config.auth_server_port_range
         )
@@ -108,9 +108,9 @@ export class IdcAuthMethod {
           clientSecret: res.clientSecret
         })
         if (!u.email) {
-          console.log('\n[Error] Failed to fetch account email. Skipping...\n')
-          continue
+          console.log('\n[Warn] Failed to fetch account email; saving with fallback email.\n')
         }
+        const email = u.email || res.email || 'builder-id@aws.amazon.com'
         accounts.push(res as KiroIDCTokenResult)
         if (accounts.length === 1 && startFresh) {
           const allAccounts = await this.repository.findAll()
@@ -119,10 +119,10 @@ export class IdcAuthMethod {
             await this.repository.delete(acc.id)
           }
         }
-        const id = createDeterministicAccountId(u.email, 'idc', res.clientId)
+        const id = createDeterministicAccountId(email, 'idc', res.clientId)
         const acc: ManagedAccount = {
           id,
-          email: u.email,
+          email,
           authMethod: 'idc',
           region,
           clientId: res.clientId,
@@ -137,6 +137,7 @@ export class IdcAuthMethod {
           limitCount: u.limitCount
         }
         await this.repository.save(acc)
+        this.accountManager.addAccount(acc)
         const currentCount = (await this.repository.findAll()).length
         console.log(`\n[Success] Added: ${u.email} (Quota: ${u.usedCount}/${u.limitCount})\n`)
         if (!(await promptAddAnotherAccount(currentCount))) break
@@ -159,9 +160,8 @@ export class IdcAuthMethod {
 
   private async handleSingleLogin(region: KiroRegion, resolve: any): Promise<void> {
     try {
-      const authData = await authorizeKiroIDC(region)
       const { url, waitForAuth } = await startIDCAuthServer(
-        authData,
+        { defaultRegion: region, defaultStartUrl: this.config.builder_id_start_url },
         this.config.auth_server_port_start,
         this.config.auth_server_port_range
       )
@@ -173,20 +173,30 @@ export class IdcAuthMethod {
         callback: async () => {
           try {
             const res = await waitForAuth()
-            const u = await fetchUsageLimits({
-              refresh: '',
-              access: res.accessToken,
-              expires: res.expiresAt,
-              authMethod: 'idc',
-              region,
-              clientId: res.clientId,
-              clientSecret: res.clientSecret
-            })
-            if (!u.email) throw new Error('No email')
-            const id = createDeterministicAccountId(u.email, 'idc', res.clientId)
+
+            let u: any = {}
+            try {
+              u = await fetchUsageLimits({
+                refresh: '',
+                access: res.accessToken,
+                expires: res.expiresAt,
+                authMethod: 'idc',
+                region,
+                clientId: res.clientId,
+                clientSecret: res.clientSecret
+              })
+            } catch (e) {
+              logger.warn(
+                'Failed to fetch usage/email after auth; saving account with fallback email',
+                e
+              )
+            }
+
+            const email = u.email || res.email || 'builder-id@aws.amazon.com'
+            const id = createDeterministicAccountId(email, 'idc', res.clientId)
             const acc: ManagedAccount = {
               id,
-              email: u.email,
+              email,
               authMethod: 'idc',
               region,
               clientId: res.clientId,
@@ -201,6 +211,7 @@ export class IdcAuthMethod {
               limitCount: u.limitCount
             }
             await this.repository.save(acc)
+            this.accountManager.addAccount(acc)
             return { type: 'success', key: res.accessToken }
           } catch (e: any) {
             return { type: 'failed' }

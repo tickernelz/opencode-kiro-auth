@@ -32,11 +32,14 @@ export const createKiroPlugin =
       auth: {
         provider: id,
         loader: async (getAuth: any) => {
-          await getAuth()
+          const stored = (await getAuth()) || {}
           await authHandler.initialize()
 
           return {
-            apiKey: '',
+            // OpenCode uses apiKey presence to determine "connected".
+            // We don't require an OpenAI-style key for requests, but returning the stored
+            // key (set by the auth method callback) makes the UI reflect connection state.
+            apiKey: stored.apiKey || stored.key || '',
             baseURL: KIRO_CONSTANTS.BASE_URL.replace('/generateAssistantResponse', '').replace(
               '{{region}}',
               config.default_region || 'us-east-1'

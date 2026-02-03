@@ -1,7 +1,9 @@
 import { createServer, type Server, type ServerResponse } from 'node:http'
-import { getErrorHtml, getIDCAuthHtml, getSuccessHtml } from './auth-page'
-import * as logger from './logger'
-import type { KiroRegion } from './types'
+import { KIRO_CONSTANTS } from '../constants.js'
+import { authorizeKiroIDC } from '../kiro/oauth-idc.js'
+import { getErrorHtml, getIDCCombinedHtml, getSuccessHtml } from './auth-page.js'
+import * as logger from './logger.js'
+import type { KiroRegion } from './types.js'
 
 export interface KiroIDCTokenResult {
   email: string
@@ -21,6 +23,11 @@ export interface IDCAuthData {
   interval: number
   expiresIn: number
   region: KiroRegion
+}
+
+interface IDCAuthServerOptions {
+  defaultRegion: KiroRegion
+  defaultStartUrl: string
 }
 
 async function tryPort(port: number): Promise<boolean> {
@@ -47,7 +54,7 @@ async function findAvailablePort(startPort: number, range: number): Promise<numb
 }
 
 export async function startIDCAuthServer(
-  authData: IDCAuthData,
+  options: IDCAuthServerOptions,
   startPort: number = 19847,
   portRange: number = 10
 ): Promise<{ url: string; waitForAuth: () => Promise<KiroIDCTokenResult> }> {
@@ -66,7 +73,10 @@ export async function startIDCAuthServer(
     let timeoutId: any = null
     let resolver: any = null
     let rejector: any = null
-    const status: any = { status: 'pending' }
+    const status: any = { status: 'idle' }
+
+    let authData: IDCAuthData | null = null
+    let pollGeneration = 0
 
     const cleanup = () => {
       if (timeoutId) clearTimeout(timeoutId)
@@ -77,18 +87,31 @@ export async function startIDCAuthServer(
       res.end(html)
     }
 
-    const poll = async () => {
+    const poll = async (generation: number) => {
       try {
-        const body = {
-          grantType: 'urn:ietf:params:oauth:grant-type:device_code',
-          deviceCode: authData.deviceCode,
-          clientId: authData.clientId,
-          clientSecret: authData.clientSecret
+        if (!authData) {
+          return
         }
+        if (generation !== pollGeneration) {
+          return
+        }
+        // AWS SSO OIDC CreateToken expects JSON keys (clientId/clientSecret/deviceCode/grantType)
+        // matching the StartDeviceAuthorization flow.
+        const body = JSON.stringify({
+          clientId: authData.clientId,
+          clientSecret: authData.clientSecret,
+          deviceCode: authData.deviceCode,
+          grantType: 'urn:ietf:params:oauth:grant-type:device_code'
+        })
+
         const res = await fetch(`https://oidc.${authData.region}.amazonaws.com/token`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body)
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': KIRO_CONSTANTS.USER_AGENT,
+            Accept: 'application/json'
+          },
+          body
         })
 
         const responseText = await res.text()
@@ -138,7 +161,7 @@ export async function startIDCAuthServer(
             })
           setTimeout(cleanup, 2000)
         } else if (d.error === 'authorization_pending') {
-          setTimeout(poll, authData.interval * 1000)
+          setTimeout(() => poll(generation), authData.interval * 1000)
         } else {
           status.status = 'failed'
           status.error = d.error_description || d.error
@@ -156,22 +179,79 @@ export async function startIDCAuthServer(
     }
 
     server = createServer((req, res) => {
-      const u = req.url || ''
-      if (u === '/' || u.startsWith('/?'))
+      const parsed = new URL(req.url || '/', `http://127.0.0.1:${port}`)
+      const pathname = parsed.pathname
+      if (pathname === '/') {
         sendHtml(
           res,
-          getIDCAuthHtml(
-            authData.verificationUriComplete,
-            authData.userCode,
+          getIDCCombinedHtml(
+            options.defaultStartUrl,
+            options.defaultRegion,
+            `http://127.0.0.1:${port}/begin`,
             `http://127.0.0.1:${port}/status`
           )
         )
-      else if (u === '/status') {
+      } else if (pathname === '/begin') {
+        ;(async () => {
+          try {
+            const startUrl = parsed.searchParams.get('startUrl') || options.defaultStartUrl
+            const regionParam = parsed.searchParams.get('region') || options.defaultRegion
+
+            // Validate region format early to avoid confusing OIDC errors.
+            if (!/^[a-z]{2}-[a-z-]+-\d+$/.test(regionParam)) {
+              throw new Error(`Invalid region: ${regionParam}`)
+            }
+
+            const region = regionParam as KiroRegion
+
+            status.status = 'pending'
+            delete status.error
+
+            pollGeneration++
+            const generation = pollGeneration
+
+            if (timeoutId) clearTimeout(timeoutId)
+            timeoutId = setTimeout(() => {
+              status.status = 'timeout'
+              logger.warn('Auth timeout waiting for authorization')
+              if (rejector) rejector(new Error('Timeout'))
+              cleanup()
+            }, 900000)
+
+            const d = await authorizeKiroIDC(region, startUrl)
+            authData = d as unknown as IDCAuthData
+
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(
+              JSON.stringify({
+                verificationUrl: authData.verificationUrl,
+                verificationUriComplete: authData.verificationUriComplete,
+                userCode: authData.userCode,
+                region: authData.region
+              })
+            )
+
+            poll(generation)
+          } catch (e: any) {
+            const msg = e?.message || 'Failed to begin authentication'
+            status.status = 'failed'
+            status.error = msg
+            res.writeHead(400, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ message: msg }))
+          }
+        })().catch(() => {})
+      } else if (pathname === '/status') {
         res.writeHead(200, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify(status))
-      } else if (u === '/success') sendHtml(res, getSuccessHtml())
-      else if (u === '/error') sendHtml(res, getErrorHtml(status.error || 'Failed'))
-      else {
+        const payload = {
+          ...status,
+          message: status.error
+        }
+        res.end(JSON.stringify(payload))
+      } else if (pathname === '/success') sendHtml(res, getSuccessHtml())
+      else if (pathname === '/error') {
+        const msg = parsed.searchParams.get('message') || status.error || 'Failed'
+        sendHtml(res, getErrorHtml(msg))
+      } else {
         res.writeHead(404)
         res.end()
       }
@@ -183,13 +263,6 @@ export async function startIDCAuthServer(
       reject(e)
     })
     server.listen(port, '127.0.0.1', () => {
-      timeoutId = setTimeout(() => {
-        status.status = 'timeout'
-        logger.warn('Auth timeout waiting for authorization')
-        if (rejector) rejector(new Error('Timeout'))
-        cleanup()
-      }, 900000)
-      poll()
       resolve({
         url: `http://127.0.0.1:${port}`,
         waitForAuth: () =>
