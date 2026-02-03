@@ -14,6 +14,19 @@ import {
   safeJsonParse
 } from './kiro-cli-parser'
 
+function extractProfileArnFromAccessToken(accessToken: string | undefined): string | undefined {
+  if (!accessToken || !accessToken.includes('.')) return undefined
+  const parts = accessToken.split('.')
+  if (parts.length < 2 || !parts[1]) return undefined
+  try {
+    const payload = Buffer.from(parts[1], 'base64').toString('utf8')
+    const data = JSON.parse(payload)
+    return data.profileArn || data.profile_arn || data['profile_arn'] || undefined
+  } catch {
+    return undefined
+  }
+}
+
 export async function syncFromKiroCli() {
   const dbPath = getCliDbPath()
   if (!existsSync(dbPath)) return
