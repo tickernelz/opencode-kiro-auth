@@ -101,6 +101,21 @@ This happens when the plugin has no records in `~/.config/opencode/kiro.db`.
 
 Note for IDC/SSO (ODIC): the plugin may temporarily create an account with a placeholder email if it cannot fetch the real email during sync (e.g. offline). It will replace it with the real email once usage/email lookup succeeds.
 
+### Error: ERR_INVALID_URL
+
+`TypeError [ERR_INVALID_URL]: "undefined/chat/completions" cannot be parsed as a URL`
+
+If this happens, check your auth.json in .local/share/opencode. example:
+
+```json
+{
+  "kiro": {
+    "type": "api",
+    "key": "whatever"
+  }
+}
+```
+
 ## Configuration
 
 The plugin supports extensive configuration options. Edit `~/.config/opencode/kiro.json`:
