@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { ManagedAccount } from '../types'
 import { deduplicateAccounts, mergeAccounts, withDatabaseLock } from './locked-operations'
 import { runMigrations } from './migrations'
+import { cleanupSqliteSidecars } from './sqlite-recovery.js'
 
 function getBaseDir(): string {
   const p = process.platform
@@ -25,7 +26,23 @@ export class KiroDatabase {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     this.db = new Database(path)
     this.db.run('PRAGMA busy_timeout = 5000')
-    this.init()
+
+    try {
+      this.init()
+    } catch (e) {
+      if (!isRecoverableSqliteIoError(e)) throw e
+
+      // Common case: kiro.db was deleted while kiro.db-wal/kiro.db-shm remained.
+      // SQLite can report this as "disk I/O error". Best-effort cleanup and retry once.
+      try {
+        this.db.close()
+      } catch {}
+      cleanupSqliteSidecars(this.path)
+
+      this.db = new Database(path)
+      this.db.run('PRAGMA busy_timeout = 5000')
+      this.init()
+    }
   }
   private init() {
     this.db.run('PRAGMA journal_mode = WAL')
@@ -56,14 +73,25 @@ export class KiroDatabase {
         is_healthy, unhealthy_reason, recovery_time, fail_count, last_used,
         used_count, limit_count, last_sync
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(refresh_token) DO UPDATE SET
-        id=excluded.id, email=excluded.email, auth_method=excluded.auth_method,
-        region=excluded.region, client_id=excluded.client_id, client_secret=excluded.client_secret,
-        profile_arn=excluded.profile_arn, access_token=excluded.access_token, expires_at=excluded.expires_at,
-        rate_limit_reset=excluded.rate_limit_reset, is_healthy=excluded.is_healthy,
-        unhealthy_reason=excluded.unhealthy_reason, recovery_time=excluded.recovery_time,
-        fail_count=excluded.fail_count, last_used=excluded.last_used,
-        used_count=excluded.used_count, limit_count=excluded.limit_count, last_sync=excluded.last_sync
+      ON CONFLICT(id) DO UPDATE SET
+        email=excluded.email,
+        auth_method=excluded.auth_method,
+        region=excluded.region,
+        client_id=excluded.client_id,
+        client_secret=excluded.client_secret,
+        profile_arn=excluded.profile_arn,
+        refresh_token=excluded.refresh_token,
+        access_token=excluded.access_token,
+        expires_at=excluded.expires_at,
+        rate_limit_reset=excluded.rate_limit_reset,
+        is_healthy=excluded.is_healthy,
+        unhealthy_reason=excluded.unhealthy_reason,
+        recovery_time=excluded.recovery_time,
+        fail_count=excluded.fail_count,
+        last_used=excluded.last_used,
+        used_count=excluded.used_count,
+        limit_count=excluded.limit_count,
+        last_sync=excluded.last_sync
     `
       )
       .run(
@@ -160,6 +188,20 @@ export class KiroDatabase {
   close() {
     this.db.close()
   }
+}
+
+function isRecoverableSqliteIoError(e: unknown): boolean {
+  const msg =
+    e instanceof Error
+      ? e.message
+      : typeof e === 'string'
+        ? e
+        : typeof (e as any)?.message === 'string'
+          ? String((e as any).message)
+          : ''
+
+  const m = msg.toLowerCase()
+  return m.includes('disk i/o error') || m.includes('sqlite_ioerr')
 }
 
 export function createDatabase(path?: string): KiroDatabase {

@@ -1,9 +1,9 @@
 import type { KiroRegion } from './plugin/types'
 
-const VALID_REGIONS: readonly KiroRegion[] = ['us-east-1', 'us-west-2']
+const REGION_REGEX = /^[a-z]{2}-[a-z-]+-\d+$/
 
 export function isValidRegion(region: string): region is KiroRegion {
-  return VALID_REGIONS.includes(region as KiroRegion)
+  return REGION_REGEX.test(region)
 }
 
 export function normalizeRegion(region: string | undefined): KiroRegion {

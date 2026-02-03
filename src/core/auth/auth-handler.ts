@@ -31,7 +31,7 @@ export class AuthHandler {
       return []
     }
 
-    const idcMethod = new IdcAuthMethod(this.config, this.repository)
+    const idcMethod = new IdcAuthMethod(this.config, this.repository, this.accountManager)
 
     return [
       {

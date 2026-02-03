@@ -152,10 +152,14 @@ function applyEnvOverrides(config: KiroConfig): KiroConfig {
       config.auth_server_port_range
     ),
 
+    builder_id_start_url: config.builder_id_start_url,
+
     usage_tracking_enabled: parseBooleanEnv(
       env.KIRO_USAGE_TRACKING_ENABLED,
       config.usage_tracking_enabled
     ),
+
+    usage_toast_enabled: parseBooleanEnv(env.KIRO_USAGE_TOAST_ENABLED, config.usage_toast_enabled),
 
     enable_log_api_request: parseBooleanEnv(
       env.KIRO_ENABLE_LOG_API_REQUEST,

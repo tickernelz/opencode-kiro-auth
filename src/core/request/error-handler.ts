@@ -101,13 +101,25 @@ export class ErrorHandler {
       let isPermanent = false
       try {
         const errorBody = await response.text()
-        const errorData = JSON.parse(errorBody)
-        if (errorData.reason === 'INVALID_MODEL_ID') {
-          throw new Error(`Invalid model: ${errorData.message}`)
-        }
-        if (errorData.reason === 'TEMPORARILY_SUSPENDED') {
-          errorReason = 'Account Suspended'
-          isPermanent = true
+        try {
+          const errorData = JSON.parse(errorBody)
+          if (errorData.reason === 'INVALID_MODEL_ID') {
+            throw new Error(`Invalid model: ${errorData.message}`)
+          }
+          if (errorData.reason === 'TEMPORARILY_SUSPENDED') {
+            errorReason = 'Account Suspended'
+            isPermanent = true
+          } else if (errorData.reason || errorData.message) {
+            const detail = errorData.reason
+              ? `${errorData.reason}${errorData.message ? `: ${errorData.message}` : ''}`
+              : errorData.message
+            errorReason = `${errorReason} (${detail})`
+          }
+        } catch (parseError) {
+          if (errorBody) {
+            const trimmed = errorBody.replace(/\s+/g, ' ').trim().slice(0, 160)
+            if (trimmed) errorReason = `${errorReason} (${trimmed})`
+          }
         }
       } catch (e) {
         if (e instanceof Error && e.message.includes('Invalid model')) {

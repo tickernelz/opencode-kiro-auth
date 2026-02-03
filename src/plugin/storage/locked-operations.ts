@@ -21,6 +21,13 @@ export async function withDatabaseLock<T>(dbPath: string, fn: () => Promise<T>):
   if (!existsSync(dbPath)) {
     const dir = dbPath.substring(0, dbPath.lastIndexOf('/'))
     await fs.mkdir(dir, { recursive: true })
+
+    // If the DB was removed but WAL/SHM sidecars remain, SQLite can fail with
+    // "disk I/O error" when opening the newly created DB.
+    await fs.rm(`${dbPath}-wal`, { force: true }).catch(() => {})
+    await fs.rm(`${dbPath}-shm`, { force: true }).catch(() => {})
+    await fs.rm(lockPath, { force: true }).catch(() => {})
+
     await fs.writeFile(dbPath, '')
   }
 
@@ -63,8 +70,25 @@ export function mergeAccounts(
     const existingAcc = accountMap.get(acc.id)
 
     if (existingAcc) {
+      const refreshChanged =
+        typeof acc.refreshToken === 'string' && acc.refreshToken !== existingAcc.refreshToken
+      const accessChanged =
+        typeof acc.accessToken === 'string' && acc.accessToken !== existingAcc.accessToken
+      const clientIdChanged =
+        typeof acc.clientId === 'string' && acc.clientId !== existingAcc.clientId
+      const clientSecretChanged =
+        typeof acc.clientSecret === 'string' && acc.clientSecret !== existingAcc.clientSecret
+      const incomingIsFresh = (acc.lastSync || 0) >= (existingAcc.lastSync || 0)
+      const allowRecovery =
+        refreshChanged ||
+        accessChanged ||
+        clientIdChanged ||
+        clientSecretChanged ||
+        (acc.isHealthy && incomingIsFresh)
+
       const hasPermanentError =
-        isPermanentError(existingAcc.unhealthyReason) || isPermanentError(acc.unhealthyReason)
+        !allowRecovery &&
+        (isPermanentError(existingAcc.unhealthyReason) || isPermanentError(acc.unhealthyReason))
 
       accountMap.set(acc.id, {
         ...existingAcc,
@@ -77,7 +101,13 @@ export function mergeAccounts(
           acc.rateLimitResetTime || 0
         ),
         isHealthy: hasPermanentError ? false : existingAcc.isHealthy || acc.isHealthy,
-        failCount: Math.max(existingAcc.failCount || 0, acc.failCount || 0),
+        unhealthyReason: hasPermanentError
+          ? existingAcc.unhealthyReason || acc.unhealthyReason
+          : acc.unhealthyReason,
+        recoveryTime: hasPermanentError ? existingAcc.recoveryTime : acc.recoveryTime,
+        failCount: hasPermanentError
+          ? Math.max(existingAcc.failCount || 0, acc.failCount || 0)
+          : acc.failCount || 0,
         lastSync: Math.max(existingAcc.lastSync || 0, acc.lastSync || 0)
       })
     } else {

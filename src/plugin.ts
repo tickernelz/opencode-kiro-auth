@@ -1,3 +1,4 @@
+import type { Config as OpencodeConfig } from '@opencode-ai/sdk'
 import { KIRO_CONSTANTS } from './constants.js'
 import { AuthHandler } from './core/auth/auth-handler.js'
 import { RequestHandler } from './core/request/request-handler.js'
@@ -5,6 +6,8 @@ import { AccountCache } from './infrastructure/database/account-cache.js'
 import { AccountRepository } from './infrastructure/database/account-repository.js'
 import { AccountManager } from './plugin/accounts.js'
 import { loadConfig } from './plugin/config/index.js'
+
+import { ensureProviderBaseURL, getKiroOpenAICompatibleBaseURL } from './opencode-config.js'
 
 type ToastFunction = (message: string, variant: string) => void
 
@@ -29,14 +32,33 @@ export const createKiroPlugin =
     const requestHandler = new RequestHandler(accountManager, config, repository)
 
     return {
+      config: async (opencodeConfig: OpencodeConfig) => {
+        const baseURL = getKiroOpenAICompatibleBaseURL(config.default_region)
+        ensureProviderBaseURL(opencodeConfig, id, baseURL)
+
+        // OpenCode wires `provider.<id>.options` into the bundled @ai-sdk/openai-compatible.
+        // We need to ensure requests to /chat/completions are intercepted and translated to
+        // CodeWhisperer/Kiro APIs.
+        const provider = opencodeConfig.provider?.[id]
+        if (provider) {
+          provider.options = provider.options || {}
+          if (!provider.options.fetch) {
+            provider.options.fetch = (input: any, init?: any) =>
+              requestHandler.handle(input, init, showToast)
+          }
+        }
+      },
       auth: {
         provider: id,
         loader: async (getAuth: any) => {
-          await getAuth()
+          const stored = (await getAuth()) || {}
           await authHandler.initialize()
 
           return {
-            apiKey: '',
+            // OpenCode uses apiKey presence to determine "connected".
+            // We don't require an OpenAI-style key for requests, but returning the stored
+            // key (set by the auth method callback) makes the UI reflect connection state.
+            apiKey: stored.apiKey || stored.key || '',
             baseURL: KIRO_CONSTANTS.BASE_URL.replace('/generateAssistantResponse', '').replace(
               '{{region}}',
               config.default_region || 'us-east-1'

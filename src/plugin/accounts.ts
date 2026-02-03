@@ -95,25 +95,36 @@ export class AccountManager {
       }
       return !(a.rateLimitResetTime && now < a.rateLimitResetTime)
     })
+
+    const hasRealEmail = available.some((a) => !a.email.endsWith('@awsapps.local'))
+    const selectable = hasRealEmail
+      ? available.filter((a) => !a.email.endsWith('@awsapps.local'))
+      : available
+
     let selected: ManagedAccount | undefined
-    if (available.length > 0) {
+    if (selectable.length > 0) {
       if (this.strategy === 'sticky') {
-        selected = available.find((_, i) => i === this.cursor) || available[0]
+        selected = selectable.find((_, i) => i === this.cursor) || selectable[0]
       } else if (this.strategy === 'round-robin') {
-        selected = available[this.cursor % available.length]
-        this.cursor = (this.cursor + 1) % available.length
+        selected = selectable[this.cursor % selectable.length]
+        this.cursor = (this.cursor + 1) % selectable.length
       } else if (this.strategy === 'lowest-usage') {
-        selected = [...available].sort(
+        selected = [...selectable].sort(
           (a, b) => (a.usedCount || 0) - (b.usedCount || 0) || (a.lastUsed || 0) - (b.lastUsed || 0)
         )[0]
       }
     }
     if (!selected) {
-      const fallback = this.accounts
-        .filter((a) => !a.isHealthy && a.failCount < 10 && !isPermanentError(a.unhealthyReason))
-        .sort(
-          (a, b) => (a.usedCount || 0) - (b.usedCount || 0) || (a.lastUsed || 0) - (b.lastUsed || 0)
-        )[0]
+      const fallbackPool = this.accounts.filter(
+        (a) => !a.isHealthy && a.failCount < 10 && !isPermanentError(a.unhealthyReason)
+      )
+      const preferFallback = fallbackPool.some((a) => !a.email.endsWith('@awsapps.local'))
+        ? fallbackPool.filter((a) => !a.email.endsWith('@awsapps.local'))
+        : fallbackPool
+
+      const fallback = preferFallback.sort(
+        (a, b) => (a.usedCount || 0) - (b.usedCount || 0) || (a.lastUsed || 0) - (b.lastUsed || 0)
+      )[0]
       if (fallback) {
         fallback.isHealthy = true
         delete fallback.unhealthyReason
