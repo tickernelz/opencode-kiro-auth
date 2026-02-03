@@ -1,6 +1,7 @@
 export function isPermanentError(reason?: string): boolean {
   if (!reason) return false
   return (
+    reason.includes('Account Suspended') ||
     reason.includes('Invalid refresh token') ||
     reason.includes('ExpiredTokenException') ||
     reason.includes('InvalidTokenException') ||
