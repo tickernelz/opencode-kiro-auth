@@ -1,9 +1,143 @@
 import { createServer, type Server, type ServerResponse } from 'node:http'
 import { KIRO_CONSTANTS } from '../constants.js'
 import { authorizeKiroIDC } from '../kiro/oauth-idc.js'
-import { getErrorHtml, getIDCCombinedHtml, getSuccessHtml } from './auth-page.js'
+import { getErrorHtml, getSuccessHtml } from './auth-page.js'
 import * as logger from './logger.js'
 import type { KiroRegion } from './types.js'
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+function getIDCCombinedHtml(
+  defaultStartUrl: string,
+  defaultRegion: string,
+  beginUrl: string,
+  statusUrl: string
+): string {
+  const startUrl = escapeHtml(defaultStartUrl)
+  const region = escapeHtml(defaultRegion)
+  const begin = escapeHtml(beginUrl)
+  const status = escapeHtml(statusUrl)
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AWS Builder ID Authentication</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; padding: 18px; }
+    label { display:block; font-weight:600; margin-top: 12px; }
+    input { width: 100%; padding: 10px; margin-top: 6px; }
+    .row { margin-top: 14px; display:flex; gap: 10px; }
+    button { padding: 10px 12px; cursor:pointer; }
+    pre { background:#f6f8fa; padding: 12px; overflow:auto; }
+    .error { color:#b42318; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h2>Authenticate with AWS Builder ID</h2>
+
+  <label>Start URL</label>
+  <input id="startUrl" value="${startUrl}" />
+  <label>Region</label>
+  <input id="region" value="${region}" />
+
+  <div class="row">
+    <button id="begin">Begin</button>
+    <button id="open" disabled>Open Browser</button>
+    <button id="copy" disabled>Copy Code</button>
+  </div>
+
+  <div id="error" class="error" style="display:none"></div>
+  <pre id="out">Idle</pre>
+
+  <script>
+    const beginUrl = "${begin}";
+    const statusUrl = "${status}";
+    const out = document.getElementById('out');
+    const err = document.getElementById('error');
+    const btnBegin = document.getElementById('begin');
+    const btnOpen = document.getElementById('open');
+    const btnCopy = document.getElementById('copy');
+    const elStartUrl = document.getElementById('startUrl');
+    const elRegion = document.getElementById('region');
+
+    let verificationUriComplete = null;
+    let userCode = null;
+
+    function setError(msg) {
+      err.textContent = msg;
+      err.style.display = msg ? 'block' : 'none';
+    }
+
+    async function pollStatus() {
+      try {
+        const r = await fetch(statusUrl);
+        const data = await r.json();
+        if (data.status === 'success') {
+          window.location.href = '/success';
+          return;
+        }
+        if (data.status === 'failed' || data.status === 'timeout') {
+          window.location.href = '/error?message=' + encodeURIComponent(data.error || data.message || 'Authentication failed');
+          return;
+        }
+        out.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        // keep polling
+      }
+      setTimeout(pollStatus, 1000);
+    }
+
+    btnBegin.onclick = async () => {
+      setError('');
+      out.textContent = 'Starting...';
+      btnBegin.disabled = true;
+      btnOpen.disabled = true;
+      btnCopy.disabled = true;
+      try {
+        const url = new URL(beginUrl);
+        url.searchParams.set('startUrl', elStartUrl.value);
+        url.searchParams.set('region', elRegion.value);
+        const r = await fetch(url.toString());
+        const data = await r.json();
+        if (!r.ok) {
+          setError(data.message || 'Failed to begin');
+          btnBegin.disabled = false;
+          return;
+        }
+        verificationUriComplete = data.verificationUriComplete;
+        userCode = data.userCode;
+        out.textContent = 'User code: ' + userCode;
+        btnOpen.disabled = !verificationUriComplete;
+        btnCopy.disabled = !userCode;
+        pollStatus();
+      } catch (e) {
+        setError(e && e.message ? e.message : String(e));
+        btnBegin.disabled = false;
+      }
+    };
+
+    btnOpen.onclick = () => {
+      if (verificationUriComplete) window.open(verificationUriComplete, '_blank');
+    };
+
+    btnCopy.onclick = async () => {
+      try {
+        if (userCode) await navigator.clipboard.writeText(userCode);
+      } catch {}
+    };
+  </script>
+</body>
+</html>`
+}
 
 export interface KiroIDCTokenResult {
   email: string
