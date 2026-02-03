@@ -60,6 +60,16 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
             "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
             "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
           }
+        },
+        "claude-sonnet-4-5-1m": {
+          "name": "Claude Sonnet 4.5 1M",
+          "limit": { "context": 1000000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "qwen3-coder-480b": {
+          "name": "Qwen3 Coder 480B",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text"], "output": ["text"] }
         }
       }
     }
