@@ -81,10 +81,10 @@ export class AccountManager {
   getCurrentOrNext(): ManagedAccount | null {
     const now = Date.now()
     const available = this.accounts.filter((a) => {
+      if (isPermanentError(a.unhealthyReason)) {
+        return false
+      }
       if (!a.isHealthy) {
-        if (isPermanentError(a.unhealthyReason)) {
-          return false
-        }
         if (a.failCount < 10 && a.recoveryTime && now >= a.recoveryTime) {
           a.isHealthy = true
           delete a.unhealthyReason
@@ -170,10 +170,12 @@ export class AccountManager {
       acc.refreshToken = p.refreshToken
       if (p.profileArn) acc.profileArn = p.profileArn
       if (p.clientId) acc.clientId = p.clientId
-      acc.failCount = 0
-      acc.isHealthy = true
-      delete acc.unhealthyReason
-      delete acc.recoveryTime
+      if (!isPermanentError(acc.unhealthyReason)) {
+        acc.failCount = 0
+        acc.isHealthy = true
+        delete acc.unhealthyReason
+        delete acc.recoveryTime
+      }
       kiroDb.upsertAccount(acc).catch(() => {})
       writeToKiroCli(acc).catch(() => {})
     }
