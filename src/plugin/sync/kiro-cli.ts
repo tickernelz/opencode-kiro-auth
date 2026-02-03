@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { createDeterministicAccountId } from '../accounts'
+import { isPermanentError } from '../health'
 import * as logger from '../logger'
 import { kiroDb } from '../storage/sqlite'
 import { fetchUsageLimits } from '../usage'
@@ -112,6 +113,9 @@ export async function syncFromKiroCli() {
         )
           continue
 
+        const preservePermanentUnhealthy =
+          !!existingById && isPermanentError(existingById.unhealthy_reason)
+
         if (usageOk) {
           const placeholderEmail = makePlaceholderEmail(authMethod, region, clientId, profileArn)
           const placeholderId = createDeterministicAccountId(
@@ -159,8 +163,10 @@ export async function syncFromKiroCli() {
           accessToken,
           expiresAt: cliExpiresAt,
           rateLimitResetTime: 0,
-          isHealthy: true,
-          failCount: 0,
+          isHealthy: preservePermanentUnhealthy ? existingById.is_healthy === 1 : true,
+          failCount: preservePermanentUnhealthy ? existingById.fail_count || 10 : 0,
+          unhealthyReason: preservePermanentUnhealthy ? existingById.unhealthy_reason : undefined,
+          recoveryTime: preservePermanentUnhealthy ? existingById.recovery_time : undefined,
           usedCount,
           limitCount,
           lastSync: Date.now()
