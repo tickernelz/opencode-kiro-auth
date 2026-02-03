@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { ManagedAccount } from '../types'
 import { deduplicateAccounts, mergeAccounts, withDatabaseLock } from './locked-operations'
 import { runMigrations } from './migrations'
+import { cleanupSqliteSidecars } from './sqlite-recovery.js'
 
 function getBaseDir(): string {
   const p = process.platform
@@ -25,7 +26,23 @@ export class KiroDatabase {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     this.db = new Database(path)
     this.db.run('PRAGMA busy_timeout = 5000')
-    this.init()
+
+    try {
+      this.init()
+    } catch (e) {
+      if (!isRecoverableSqliteIoError(e)) throw e
+
+      // Common case: kiro.db was deleted while kiro.db-wal/kiro.db-shm remained.
+      // SQLite can report this as "disk I/O error". Best-effort cleanup and retry once.
+      try {
+        this.db.close()
+      } catch {}
+      cleanupSqliteSidecars(this.path)
+
+      this.db = new Database(path)
+      this.db.run('PRAGMA busy_timeout = 5000')
+      this.init()
+    }
   }
   private init() {
     this.db.run('PRAGMA journal_mode = WAL')
@@ -160,6 +177,20 @@ export class KiroDatabase {
   close() {
     this.db.close()
   }
+}
+
+function isRecoverableSqliteIoError(e: unknown): boolean {
+  const msg =
+    e instanceof Error
+      ? e.message
+      : typeof e === 'string'
+        ? e
+        : typeof (e as any)?.message === 'string'
+          ? String((e as any).message)
+          : ''
+
+  const m = msg.toLowerCase()
+  return m.includes('disk i/o error') || m.includes('sqlite_ioerr')
 }
 
 export function createDatabase(path?: string): KiroDatabase {
