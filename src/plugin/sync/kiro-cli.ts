@@ -194,27 +194,14 @@ export async function syncFromKiroCli() {
           if (placeholderId !== id) {
             const placeholderRow = all.find((a) => a.id === placeholderId)
             if (placeholderRow) {
-              await kiroDb.upsertAccount({
-                id: placeholderId,
-                email: placeholderRow.email,
-                authMethod,
-                region: placeholderRow.region || region,
-                clientId,
-                clientSecret,
-                profileArn,
-                refreshToken: placeholderRow.refresh_token || refreshToken,
-                accessToken: placeholderRow.access_token || accessToken,
-                expiresAt: placeholderRow.expires_at || cliExpiresAt,
-                rateLimitResetTime: 0,
-                isHealthy: false,
-                failCount: 10,
-                unhealthyReason: 'Replaced by real email',
-                recoveryTime: Date.now() + 31536000000,
-                usedCount: placeholderRow.used_count || 0,
-                limitCount: placeholderRow.limit_count || 0,
-                lastSync: Date.now()
-              })
+              usedCount = Math.max(usedCount, placeholderRow.used_count || 0)
+              limitCount = Math.max(limitCount, placeholderRow.limit_count || 0)
             }
+
+            // We enforce a unique index on refresh_token. When we later insert the real-email
+            // account (different id) using the same refresh token, a placeholder row would
+            // violate that constraint. Delete it now; it will be recreated under the real id.
+            await kiroDb.deleteAccount(placeholderId)
           }
         }
 

@@ -21,6 +21,13 @@ export async function withDatabaseLock<T>(dbPath: string, fn: () => Promise<T>):
   if (!existsSync(dbPath)) {
     const dir = dbPath.substring(0, dbPath.lastIndexOf('/'))
     await fs.mkdir(dir, { recursive: true })
+
+    // If the DB was removed but WAL/SHM sidecars remain, SQLite can fail with
+    // "disk I/O error" when opening the newly created DB.
+    await fs.rm(`${dbPath}-wal`, { force: true }).catch(() => {})
+    await fs.rm(`${dbPath}-shm`, { force: true }).catch(() => {})
+    await fs.rm(lockPath, { force: true }).catch(() => {})
+
     await fs.writeFile(dbPath, '')
   }
 

@@ -3,7 +3,8 @@ import { z } from 'zod'
 export const AccountSelectionStrategySchema = z.enum(['sticky', 'round-robin', 'lowest-usage'])
 export type AccountSelectionStrategy = z.infer<typeof AccountSelectionStrategySchema>
 
-export const RegionSchema = z.enum(['us-east-1', 'us-west-2'])
+const REGION_REGEX = /^[a-z]{2}-[a-z-]+-\d+$/
+export const RegionSchema = z.string().regex(REGION_REGEX)
 export type Region = z.infer<typeof RegionSchema>
 
 export const KiroConfigSchema = z.object({
@@ -29,7 +30,10 @@ export const KiroConfigSchema = z.object({
 
   auth_server_port_range: z.number().min(1).max(100).default(10),
 
+  builder_id_start_url: z.string().url().default('https://view.awsapps.com/start'),
+
   usage_tracking_enabled: z.boolean().default(true),
+  usage_toast_enabled: z.boolean().default(false),
   auto_sync_kiro_cli: z.boolean().default(true),
   enable_log_api_request: z.boolean().default(false)
 })
@@ -47,7 +51,9 @@ export const DEFAULT_CONFIG: KiroConfig = {
   usage_sync_max_retries: 3,
   auth_server_port_start: 19847,
   auth_server_port_range: 10,
+  builder_id_start_url: 'https://view.awsapps.com/start',
   usage_tracking_enabled: true,
+  usage_toast_enabled: false,
   auto_sync_kiro_cli: true,
   enable_log_api_request: false
 }

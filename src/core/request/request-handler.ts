@@ -12,6 +12,7 @@ import { TokenRefresher } from '../auth/token-refresher'
 import { ErrorHandler } from './error-handler'
 import { ResponseHandler } from './response-handler'
 import { RetryStrategy } from './retry-strategy'
+import { resolveThinkingConfig } from './thinking'
 
 type ToastFunction = (message: string, variant: 'info' | 'warning' | 'success' | 'error') => void
 
@@ -55,8 +56,9 @@ export class RequestHandler {
   ): Promise<Response> {
     const body = init?.body ? JSON.parse(init.body) : {}
     const model = this.extractModel(url) || body.model || 'claude-sonnet-4-5'
-    const think = model.endsWith('-thinking') || !!body.providerOptions?.thinkingConfig
-    const budget = body.providerOptions?.thinkingConfig?.thinkingBudget || 20000
+    const thinking = resolveThinkingConfig(model, body)
+    const think = thinking.enabled
+    const budget = thinking.budget
 
     let reductionFactor = 1.0
     let retry = 0

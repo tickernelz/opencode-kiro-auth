@@ -1,5 +1,5 @@
-import { KIRO_AUTH_SERVICE, KIRO_CONSTANTS, buildUrl, normalizeRegion } from '../constants'
-import type { KiroRegion } from '../plugin/types'
+import { KIRO_AUTH_SERVICE, KIRO_CONSTANTS, buildUrl, normalizeRegion } from '../constants.js'
+import type { KiroRegion } from '../plugin/types.js'
 
 export interface KiroIDCAuthorization {
   verificationUrl: string
@@ -24,9 +24,17 @@ export interface KiroIDCTokenResult {
   authMethod: 'idc'
 }
 
-export async function authorizeKiroIDC(region?: KiroRegion): Promise<KiroIDCAuthorization> {
+export async function authorizeKiroIDC(
+  region?: KiroRegion,
+  builderIdStartUrl?: string
+): Promise<KiroIDCAuthorization> {
   const effectiveRegion = normalizeRegion(region)
   const ssoOIDCEndpoint = buildUrl(KIRO_AUTH_SERVICE.SSO_OIDC_ENDPOINT, effectiveRegion)
+
+  const startUrl = await resolveStartUrl(
+    builderIdStartUrl || KIRO_AUTH_SERVICE.BUILDER_ID_START_URL,
+    KIRO_CONSTANTS.USER_AGENT
+  )
 
   try {
     const registerResponse = await fetch(`${ssoOIDCEndpoint}/client/register`, {
@@ -66,7 +74,7 @@ export async function authorizeKiroIDC(region?: KiroRegion): Promise<KiroIDCAuth
       body: JSON.stringify({
         clientId,
         clientSecret,
-        startUrl: KIRO_AUTH_SERVICE.BUILDER_ID_START_URL
+        startUrl
       })
     })
 
@@ -108,6 +116,51 @@ export async function authorizeKiroIDC(region?: KiroRegion): Promise<KiroIDCAuth
   } catch (error) {
     throw error
   }
+}
+
+function normalizeStartUrl(input: string): string {
+  let u: URL
+  try {
+    u = new URL(input)
+  } catch {
+    throw new Error('Invalid start URL provided')
+  }
+
+  // AWS device authorization expects a start URL for the org, typically ending with /start.
+  // Users often paste deep links with fragments (/#/...) or extra paths; normalize to origin + /start.
+  return `${u.origin}/start`
+}
+
+async function resolveStartUrl(input: string, userAgent: string): Promise<string> {
+  const candidate = normalizeStartUrl(input)
+  const parsed = new URL(candidate)
+
+  // Best effort: follow redirects to discover the canonical access portal hostname.
+  // Some orgs use vanity domains that redirect to the underlying d-*.awsapps.com portal.
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 4000)
+    const res = await fetch(candidate, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: { 'User-Agent': userAgent },
+      signal: controller.signal
+    })
+    clearTimeout(timeout)
+
+    const finalUrl = res.url ? new URL(res.url) : null
+    if (finalUrl) {
+      const host = finalUrl.hostname.toLowerCase()
+      if (host.endsWith('.awsapps.com') || host === 'view.awsapps.com') {
+        return `${finalUrl.origin}/start`
+      }
+    }
+  } catch {
+    // Ignore and fall back to candidate.
+  }
+
+  // If there was no useful redirect, return normalized origin/start.
+  return `${parsed.origin}/start`
 }
 
 export async function pollKiroIDCToken(
