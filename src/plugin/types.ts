@@ -1,5 +1,5 @@
 export type KiroAuthMethod = 'idc' | 'desktop'
-export type KiroRegion = 'us-east-1' | 'us-west-2'
+export type KiroRegion = string
 
 export interface KiroAuthDetails {
   refresh: string
@@ -46,7 +46,6 @@ export interface ManagedAccount {
 export interface CodeWhispererMessage {
   userInputMessage?: {
     content: string
-    modelId: string
     origin: string
     images?: Array<{ format: string; source: { bytes: string } }>
     userInputMessageContext?: {

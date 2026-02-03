@@ -36,7 +36,6 @@ export function buildHistory(
       history.push({
         userInputMessage: {
           content: system,
-          modelId: resolved,
           origin: KIRO_CONSTANTS.ORIGIN_AI_EDITOR
         }
       })
@@ -46,7 +45,7 @@ export function buildHistory(
     const m = msgs[i]
     if (!m) continue
     if (m.role === 'user') {
-      const uim: any = { content: '', modelId: resolved, origin: KIRO_CONSTANTS.ORIGIN_AI_EDITOR }
+      const uim: any = { content: '', origin: KIRO_CONSTANTS.ORIGIN_AI_EDITOR }
       const trs: any[] = []
 
       if (Array.isArray(m.content)) {
@@ -97,7 +96,6 @@ export function buildHistory(
       history.push({
         userInputMessage: {
           content: 'Tool results provided.',
-          modelId: resolved,
           origin: KIRO_CONSTANTS.ORIGIN_AI_EDITOR,
           userInputMessageContext: { toolResults: deduplicateToolResults(trs) }
         }

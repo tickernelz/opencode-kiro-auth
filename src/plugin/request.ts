@@ -13,10 +13,7 @@ import {
   mergeAdjacentMessages,
   truncate
 } from '../infrastructure/transformers/message-transformer.js'
-import {
-  convertToolsToCodeWhisperer,
-  deduplicateToolResults
-} from '../infrastructure/transformers/tool-transformer.js'
+import { deduplicateToolResults } from '../infrastructure/transformers/tool-transformer.js'
 import {
   convertImagesToKiroFormat,
   extractAllImages,
@@ -47,7 +44,7 @@ export function transformToCodeWhisperer(
   const msgs = mergeAdjacentMessages([...messages])
   const lastMsg = msgs[msgs.length - 1]
   if (lastMsg && lastMsg.role === 'assistant' && getContentText(lastMsg) === '{') msgs.pop()
-  const cwTools = tools ? convertToolsToCodeWhisperer(tools) : []
+  const cwTools: any[] = []
   const toolResultLimit = Math.floor(250000 * reductionFactor)
   let history = buildHistory(msgs, resolved, sys, toolResultLimit)
   const historyLimit = Math.floor(850000 * reductionFactor)
@@ -139,11 +136,13 @@ export function transformToCodeWhisperer(
       currentMessage: {
         userInputMessage: {
           content: curContent,
-          modelId: resolved,
           origin: KIRO_CONSTANTS.ORIGIN_AI_EDITOR
         }
       }
     }
+  }
+  if (auth.profileArn) {
+    request.profileArn = auth.profileArn
   }
   const toolUsesInHistory = history.flatMap((h) => h.assistantResponseMessage?.toolUses || [])
   const allToolUseIdsInHistory = new Set(toolUsesInHistory.map((tu) => tu.toolUseId))
@@ -175,7 +174,6 @@ export function transformToCodeWhisperer(
       history.push({
         userInputMessage: {
           content: 'Running tools...',
-          modelId: resolved,
           origin: KIRO_CONSTANTS.ORIGIN_AI_EDITOR
         }
       })
@@ -195,7 +193,9 @@ export function transformToCodeWhisperer(
     if (curImgs.length) uim.images = curImgs
     const ctx: any = {}
     if (finalCurTrs.length) ctx.toolResults = deduplicateToolResults(finalCurTrs)
-    if (cwTools.length) ctx.tools = cwTools
+    if (cwTools.length) {
+      ctx.tools = cwTools
+    }
     if (Object.keys(ctx).length) uim.userInputMessageContext = ctx
     const hasToolsInHistory = historyHasToolCalling(history)
     if (hasToolsInHistory) {
