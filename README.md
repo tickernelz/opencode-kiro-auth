@@ -38,7 +38,7 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
           "variants": {
             "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
             "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+            "high": { "thinkingConfig": { "thinkingBudget": 32768 } }
           }
         },
         "claude-haiku-4-5": {
@@ -58,7 +58,7 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
           "variants": {
             "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
             "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+            "high": { "thinkingConfig": { "thinkingBudget": 32768 } }
           }
         },
         "claude-sonnet-4-5-1m": {
@@ -133,7 +133,9 @@ The plugin supports extensive configuration options. Edit `~/.config/opencode/ki
   "usage_sync_max_retries": 3,
   "auth_server_port_start": 19847,
   "auth_server_port_range": 10,
+  "builder_id_start_url": "https://view.awsapps.com/start",
   "usage_tracking_enabled": true,
+  "usage_toast_enabled": false,
   "enable_log_api_request": false
 }
 ```
@@ -142,7 +144,7 @@ The plugin supports extensive configuration options. Edit `~/.config/opencode/ki
 
 - `auto_sync_kiro_cli`: Automatically sync sessions from Kiro CLI (default: `true`).
 - `account_selection_strategy`: Account rotation strategy (`sticky`, `round-robin`, `lowest-usage`).
-- `default_region`: AWS region (`us-east-1`, `us-west-2`).
+- `default_region`: AWS region (e.g. `us-east-1`, `eu-west-1`).
 - `rate_limit_retry_delay_ms`: Delay between rate limit retries (1000-60000ms).
 - `rate_limit_max_retries`: Maximum retry attempts for rate limits (0-10).
 - `max_request_iterations`: Maximum loop iterations to prevent hangs (10-1000).
@@ -151,7 +153,16 @@ The plugin supports extensive configuration options. Edit `~/.config/opencode/ki
 - `usage_sync_max_retries`: Retry attempts for usage sync (0-5).
 - `auth_server_port_start`: Starting port for auth server (1024-65535).
 - `auth_server_port_range`: Number of ports to try (1-100).
+- `builder_id_start_url`: Default AWS start URL shown in the auth window (you can override it in the browser UI).
+
+## Authentication UI
+
+The browser page is a single window:
+
+- Enter `Start URL` and `Region`, then click `Begin`.
+- The AWS verification page opens only when you click `Open Browser`.
 - `usage_tracking_enabled`: Enable usage tracking and toast notifications.
+- `usage_toast_enabled`: Show per-account usage toasts (default: `false`).
 - `enable_log_api_request`: Enable detailed API request logging.
 
 ## Storage

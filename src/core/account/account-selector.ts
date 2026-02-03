@@ -7,6 +7,8 @@ type ToastFunction = (message: string, variant: 'info' | 'warning' | 'success' |
 interface AccountSelectorConfig {
   auto_sync_kiro_cli: boolean
   account_selection_strategy: 'sticky' | 'round-robin' | 'lowest-usage'
+  usage_tracking_enabled: boolean
+  usage_toast_enabled: boolean
 }
 
 export class AccountSelector {
@@ -61,6 +63,8 @@ export class AccountSelector {
     }
 
     if (
+      this.config.usage_tracking_enabled &&
+      this.config.usage_toast_enabled &&
       this.accountManager.shouldShowUsageToast() &&
       acc.usedCount !== undefined &&
       acc.limitCount !== undefined
