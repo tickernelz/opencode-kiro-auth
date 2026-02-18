@@ -10,7 +10,7 @@ export async function* transformKiroStream(
   model: string,
   conversationId: string
 ): AsyncGenerator<any> {
-  const thinkingRequested = true
+  const thinkingRequested = model.endsWith('-thinking')
 
   const streamState: StreamState = {
     thinkingRequested,
@@ -37,6 +37,7 @@ export async function* transformKiroStream(
   let contextUsagePercentage: number | null = null
   const toolCalls: ToolCallState[] = []
   let currentToolCall: ToolCallState | null = null
+  let preThinkingText = ''
 
   try {
     while (true) {
@@ -71,7 +72,7 @@ export async function* transformKiroStream(
               if (startPos !== -1) {
                 const before = streamState.buffer.slice(0, startPos)
                 if (before) {
-                  deltaEvents.push(...createTextDeltaEvents(before, streamState))
+                  preThinkingText += before
                 }
 
                 streamState.buffer = streamState.buffer.slice(startPos + THINKING_START_TAG.length)
@@ -83,7 +84,7 @@ export async function* transformKiroStream(
               if (safeLen > 0) {
                 const safeText = streamState.buffer.slice(0, safeLen)
                 if (safeText) {
-                  deltaEvents.push(...createTextDeltaEvents(safeText, streamState))
+                  preThinkingText += safeText
                 }
                 streamState.buffer = streamState.buffer.slice(safeLen)
               }
@@ -108,6 +109,10 @@ export async function* transformKiroStream(
                 if (streamState.buffer.startsWith('\n\n')) {
                   streamState.buffer = streamState.buffer.slice(2)
                 }
+                if (preThinkingText) {
+                  deltaEvents.push(...createTextDeltaEvents(preThinkingText, streamState))
+                  preThinkingText = ''
+                }
                 continue
               }
 
@@ -123,6 +128,10 @@ export async function* transformKiroStream(
             }
 
             if (streamState.thinkingExtracted) {
+              if (preThinkingText) {
+                deltaEvents.push(...createTextDeltaEvents(preThinkingText, streamState))
+                preThinkingText = ''
+              }
               const rest = streamState.buffer
               streamState.buffer = ''
               if (rest) {
@@ -194,10 +203,21 @@ export async function* transformKiroStream(
         for (const ev of stopBlock(streamState.thinkingBlockIndex, streamState))
           yield convertToOpenAI(ev, conversationId, model)
       } else {
+        if (preThinkingText) {
+          for (const ev of createTextDeltaEvents(preThinkingText, streamState))
+            yield convertToOpenAI(ev, conversationId, model)
+          preThinkingText = ''
+        }
         for (const ev of createTextDeltaEvents(streamState.buffer, streamState))
           yield convertToOpenAI(ev, conversationId, model)
         streamState.buffer = ''
       }
+    }
+
+    if (preThinkingText) {
+      for (const ev of createTextDeltaEvents(preThinkingText, streamState))
+        yield convertToOpenAI(ev, conversationId, model)
+      preThinkingText = ''
     }
 
     for (const ev of stopBlock(streamState.textBlockIndex, streamState))
