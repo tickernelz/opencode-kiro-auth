@@ -4,7 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/@zhafron/opencode-kiro-auth)](https://www.npmjs.com/package/@zhafron/opencode-kiro-auth)
 [![license](https://img.shields.io/npm/l/@zhafron/opencode-kiro-auth)](https://www.npmjs.com/package/@zhafron/opencode-kiro-auth)
 
-OpenCode plugin for AWS Kiro (CodeWhisperer) providing access to Claude Sonnet and Haiku models with substantial trial quotas.
+OpenCode plugin for AWS Kiro (CodeWhisperer) providing access to Claude Sonnet  models with substantial trial quotas.
 
 ## Features
 
@@ -55,11 +55,6 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
             "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
             "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
           }
-        },
-        "claude-haiku-4-5": {
-          "name": "Claude Haiku 4.5",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image"], "output": ["text"] }
         },
         "claude-opus-4-5": {
           "name": "Claude Opus 4.5",
