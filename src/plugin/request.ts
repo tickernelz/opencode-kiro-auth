@@ -1,6 +1,6 @@
 import * as crypto from 'crypto'
 import * as os from 'os'
-import { KIRO_CONSTANTS, buildUrl, extractRegionFromArn, isLongContextModel } from '../constants.js'
+import { KIRO_CONSTANTS, buildUrl, extractRegionFromArn } from '../constants.js'
 import {
   buildHistory,
   extractToolNamesFromHistory,
@@ -55,10 +55,9 @@ export function transformToCodeWhisperer(
   const lastMsg = msgs[msgs.length - 1]
   if (lastMsg && lastMsg.role === 'assistant' && getContentText(lastMsg) === '{') msgs.pop()
   const cwTools = tools ? convertToolsToCodeWhisperer(tools) : []
-  const longCtx = isLongContextModel(model)
-  const toolResultLimit = Math.floor((longCtx ? 1250000 : 250000) * reductionFactor)
+  const toolResultLimit = Math.floor(1250000 * reductionFactor)
   let history = buildHistory(msgs, resolved, toolResultLimit)
-  const historyLimit = Math.floor((longCtx ? 4250000 : 850000) * reductionFactor)
+  const historyLimit = Math.floor(4250000 * reductionFactor)
   history = truncateHistory(history, historyLimit)
   history = injectSystemPrompt(history, sys, resolved)
   const curMsg = msgs[msgs.length - 1]

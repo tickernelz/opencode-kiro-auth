@@ -54,18 +54,12 @@ export const MODEL_MAPPING: Record<string, string> = {
   'claude-haiku-4-5-thinking': 'claude-haiku-4.5',
   'claude-sonnet-4-5': 'claude-sonnet-4.5',
   'claude-sonnet-4-5-thinking': 'claude-sonnet-4.5',
-  'claude-sonnet-4-5-1m': 'claude-sonnet-4.5-1m',
-  'claude-sonnet-4-5-1m-thinking': 'claude-sonnet-4.5-1m',
   'claude-sonnet-4-6': 'claude-sonnet-4.6',
   'claude-sonnet-4-6-thinking': 'claude-sonnet-4.6',
-  'claude-sonnet-4-6-1m': 'claude-sonnet-4.6-1m',
-  'claude-sonnet-4-6-1m-thinking': 'claude-sonnet-4.6-1m',
   'claude-opus-4-5': 'claude-opus-4.5',
   'claude-opus-4-5-thinking': 'claude-opus-4.5',
   'claude-opus-4-6': 'claude-opus-4.6',
   'claude-opus-4-6-thinking': 'claude-opus-4.6',
-  'claude-opus-4-6-1m': 'claude-opus-4.6-1m',
-  'claude-opus-4-6-1m-thinking': 'claude-opus-4.6-1m',
   'claude-sonnet-4': 'claude-sonnet-4',
   'claude-3-7-sonnet': 'CLAUDE_3_7_SONNET_20250219_V1_0',
   'nova-swe': 'AGI_NOVA_SWE_V1_5',
@@ -76,12 +70,6 @@ export const MODEL_MAPPING: Record<string, string> = {
 }
 
 export const SUPPORTED_MODELS = Object.keys(MODEL_MAPPING)
-
-const LONG_CONTEXT_MODELS = new Set(Object.keys(MODEL_MAPPING).filter((k) => k.includes('-1m')))
-
-export function isLongContextModel(model: string): boolean {
-  return LONG_CONTEXT_MODELS.has(model)
-}
 
 export const KIRO_AUTH_SERVICE = {
   ENDPOINT: 'https://prod.{{region}}.auth.desktop.kiro.dev',
