@@ -1,7 +1,7 @@
 {
-  "name": "@zhafron/opencode-kiro-auth",
-  "version": "1.8.1",
-  "description": "OpenCode plugin for AWS Kiro (CodeWhisperer) providing access to Claude models",
+  "name": "@igorvelho/opencode-kiro-auth",
+  "version": "1.8.2",
+  "description": "OpenCode plugin for AWS Kiro (CodeWhisperer) - forked with updated model support (minimax-m2.5, glm-5, deepseek-3.2, qwen3-coder-next)",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -22,11 +22,11 @@
     "ai",
     "auth"
   ],
-  "author": "tickernelz",
+  "author": "igorvelho",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tickernelz/opencode-kiro-auth.git"
+    "url": "git+https://github.com/igorvelho/opencode-kiro-auth.git"
   },
   "publishConfig": {
     "access": "public"
