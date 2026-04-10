@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process'
 import type { AccountRepository } from '../../infrastructure/database/account-repository'
 import type { AccountManager } from '../../plugin/accounts'
 import type { KiroConfig } from '../../plugin/config'
@@ -70,7 +71,13 @@ export class RequestHandler {
       }
 
       if (this.allAccountsPermanentlyUnhealthy()) {
-        throw new Error('All accounts are permanently unhealthy (quota exceeded or suspended)')
+        const reauthed = await this.triggerKiroCliLogin(showToast)
+        if (!reauthed) {
+          throw new Error(
+            'All accounts are permanently unhealthy. Please re-authenticate with kiro-cli login.'
+          )
+        }
+        continue
       }
 
       let acc = await this.accountSelector.selectHealthyAccount(showToast)
@@ -256,6 +263,40 @@ export class RequestHandler {
         rData,
         logger.getTimestamp()
       )
+    }
+  }
+
+  private async triggerKiroCliLogin(showToast: ToastFunction): Promise<boolean> {
+    try {
+      showToast('Session expired. Launching kiro-cli login...', 'warning')
+      logger.log('Triggering kiro-cli login for re-authentication')
+
+      await new Promise<void>((resolve, reject) => {
+        execFile('kiro-cli', ['login'], { timeout: 120000 }, (error) => {
+          if (error) reject(error)
+          else resolve()
+        })
+      })
+
+      await syncFromKiroCli()
+      this.repository.invalidateCache()
+      const accounts = await this.repository.findAll()
+      for (const acc of accounts) {
+        this.accountManager.addAccount(acc)
+      }
+
+      const healthy = accounts.some((a) => a.isHealthy)
+      if (healthy) {
+        showToast('Re-authentication successful.', 'success')
+        return true
+      }
+
+      logger.warn('kiro-cli login completed but no healthy accounts found')
+      return false
+    } catch (e) {
+      logger.error('kiro-cli login failed', e instanceof Error ? e : new Error(String(e)))
+      showToast('Re-authentication failed. Run kiro-cli login manually.', 'error')
+      return false
     }
   }
 
