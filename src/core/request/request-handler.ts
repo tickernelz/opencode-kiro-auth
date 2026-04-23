@@ -1,4 +1,5 @@
 import { GenerateAssistantResponseCommand } from '@aws/codewhisperer-streaming-client'
+import { execFile } from 'node:child_process'
 import type { AccountRepository } from '../../infrastructure/database/account-repository'
 import type { AccountManager } from '../../plugin/accounts'
 import type { KiroConfig } from '../../plugin/config'
@@ -276,24 +277,64 @@ export class RequestHandler {
   }
 
   private async triggerReauth(showToast: ToastFunction): Promise<boolean> {
-    if (!this.client) return false
+    // Try OpenCode OAuth first if client is available
+    if (this.client) {
+      try {
+        showToast('Session expired. Re-authenticating...', 'warning')
+        await this.client.provider.oauth.authorize({
+          path: { id: 'kiro' },
+          body: { method: 0 }
+        })
+        await syncFromKiroCli()
+        this.repository.invalidateCache()
+        const accounts = await this.repository.findAll()
+        for (const acc of accounts) {
+          this.accountManager.addAccount(acc)
+        }
+        showToast('Re-authentication successful.', 'success')
+        return true
+      } catch (e) {
+        logger.warn(
+          'OAuth re-auth failed, trying kiro-cli login fallback',
+          e instanceof Error ? e : new Error(String(e))
+        )
+      }
+    }
+
+    // Fallback: try kiro-cli login
+    return this.triggerKiroCliLogin(showToast)
+  }
+
+  private async triggerKiroCliLogin(showToast: ToastFunction): Promise<boolean> {
     try {
-      showToast('Session expired. Re-authenticating...', 'warning')
-      await this.client.provider.oauth.authorize({
-        path: { id: 'kiro' },
-        body: { method: 0 }
+      showToast('Launching kiro-cli login...', 'warning')
+      logger.log('Triggering kiro-cli login for re-authentication')
+
+      await new Promise<void>((resolve, reject) => {
+        execFile('kiro-cli', ['login'], { timeout: 120000 }, (error) => {
+          if (error) reject(error)
+          else resolve()
+        })
       })
-      // Sync fresh tokens from CLI after re-auth
+
       await syncFromKiroCli()
       this.repository.invalidateCache()
       const accounts = await this.repository.findAll()
       for (const acc of accounts) {
         this.accountManager.addAccount(acc)
       }
-      showToast('Re-authentication successful.', 'success')
-      return true
+
+      const healthy = accounts.some((a) => a.isHealthy)
+      if (healthy) {
+        showToast('Re-authentication successful.', 'success')
+        return true
+      }
+
+      logger.warn('kiro-cli login completed but no healthy accounts found')
+      return false
     } catch (e) {
-      logger.error('Re-auth failed', e instanceof Error ? e : new Error(String(e)))
+      logger.error('kiro-cli login failed', e instanceof Error ? e : new Error(String(e)))
+      showToast('Re-authentication failed. Run kiro-cli login manually.', 'error')
       return false
     }
   }
