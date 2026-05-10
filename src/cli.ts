@@ -2,7 +2,7 @@
 import { render } from 'ink'
 import { basename } from 'node:path'
 import { stdin as input, stdout as output } from 'node:process'
-import { createInterface } from 'node:readline'
+import { createInterface, emitKeypressEvents } from 'node:readline'
 import { createElement } from 'react'
 import {
   type CommandResult,
@@ -26,7 +26,7 @@ function help(): CommandResult {
       '  opencode-kiro-auth',
       '  opencode-kiro-auth tui',
       '  opencode-kiro-auth accounts list',
-      '  opencode-kiro-auth accounts add [--sync-only] [--no-logout]',
+      '  opencode-kiro-auth accounts add [--sync-only] [--manual] [--no-logout]',
       '  opencode-kiro-auth accounts sync',
       '  opencode-kiro-auth accounts switch <index>',
       '  opencode-kiro-auth accounts enable <index>',
@@ -105,12 +105,77 @@ function shouldSkipLogout(args: string[]): boolean {
   return args.includes('--no-logout') || args.includes('--skip-logout')
 }
 
-function buildLoginArgsFromFlags(args: string[]): string[] {
+function buildLoginArgsFromFlags(args: string[], mode: LoginMode): string[] {
   if (args.includes('--google')) return ['login', '--license', 'free', '--social', 'google']
   if (args.includes('--github')) return ['login', '--license', 'free', '--social', 'github']
-  if (args.includes('--device')) return ['login', '--license', 'free', '--use-device-flow']
   if (args.includes('--idc') || args.includes('--pro')) return ['login', '--license', 'pro']
+  if (args.includes('--device') || args.includes('--manual') || mode === 'manual') {
+    return ['login', '--use-device-flow']
+  }
   return ['login']
+}
+
+type LoginMode = 'browser' | 'manual'
+
+function renderLoginModeMenu(selected: number): void {
+  const options = ['Open Browser (Easy)', 'Manual / Incognito']
+  output.write('\x1b[2J\x1b[H')
+  output.write('+ Get Started\n')
+  output.write('  Choose how you want to continue.\n\n')
+  output.write('  Sign in\n')
+  for (let index = 0; index < options.length; index += 1) {
+    const prefix = index === selected ? '> ' : '  '
+    output.write(`${prefix}${options[index]}\n`)
+  }
+  output.write('\n  0 Back\n\n')
+  output.write('  ↑↓ Move | Enter Select | 1 Easy | 2 Manual | Q Back\n')
+  output.write('+ ')
+}
+
+async function selectLoginMode(): Promise<LoginMode | null> {
+  if (!input.isTTY) return 'browser'
+  emitKeypressEvents(input)
+  input.setRawMode(true)
+  input.resume()
+  let selected = 0
+  renderLoginModeMenu(selected)
+
+  return new Promise((resolve) => {
+    const cleanup = () => {
+      input.off('keypress', onKey)
+      input.setRawMode(false)
+      output.write('\n')
+    }
+    const onKey = (str: string, key: { name?: string; ctrl?: boolean }) => {
+      if (key.ctrl && key.name === 'c') {
+        cleanup()
+        resolve(null)
+        return
+      }
+      if (key.name === 'q' || key.name === 'escape' || str === '0') {
+        cleanup()
+        resolve(null)
+        return
+      }
+      if (key.name === 'up' || str === 'k') selected = selected === 0 ? 1 : 0
+      else if (key.name === 'down' || str === 'j') selected = selected === 1 ? 0 : 1
+      else if (str === '1') {
+        cleanup()
+        resolve('browser')
+        return
+      } else if (str === '2') {
+        cleanup()
+        resolve('manual')
+        return
+      } else if (key.name === 'return') {
+        cleanup()
+        resolve(selected === 0 ? 'browser' : 'manual')
+        return
+      }
+      renderLoginModeMenu(selected)
+    }
+    input.on('keypress', onKey)
+  })
 }
 
 function printResult(result: CommandResult): void {
@@ -131,7 +196,9 @@ async function guidedAdd(args: string[]): Promise<number> {
     console.log('Continuing to Kiro login anyway.')
   }
 
-  const loginArgs = buildLoginArgsFromFlags(args)
+  const mode = await selectLoginMode()
+  if (!mode) return 1
+  const loginArgs = buildLoginArgsFromFlags(args, mode)
 
   if (!shouldSkipLogout(args)) {
     if (!args.includes('--yes')) {
@@ -153,6 +220,11 @@ async function guidedAdd(args: string[]): Promise<number> {
   }
 
   console.log(`\nLaunching: kiro-cli ${loginArgs.join(' ')}`)
+  if (mode === 'manual') {
+    console.log(
+      'Manual / Incognito selected. Kiro CLI will print/copy the manual sign-in link if required.'
+    )
+  }
   const login = runKiroCli(loginArgs, { stdio: 'inherit' })
   if (login.error) throw login.error
   if (typeof login.status === 'number' && login.status !== 0) return login.status
