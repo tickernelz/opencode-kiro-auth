@@ -107,16 +107,13 @@ function shouldSkipLogout(args: string[]): boolean {
   return args.includes('--no-logout') || args.includes('--skip-logout')
 }
 
-function buildLoginArgsFromFlags(args: string[], mode: LoginMode): string[] {
+function buildLoginArgsFromFlags(args: string[], _mode: LoginMode): string[] {
   if (args.includes('--google')) return ['login', '--license', 'free', '--social', 'google']
   if (args.includes('--github')) return ['login', '--license', 'free', '--social', 'github']
   if (args.includes('--idc') || args.includes('--pro')) return ['login', '--license', 'pro']
-  if (args.includes('--device') || args.includes('--manual') || mode === 'manual') {
-    return ['login', '--use-device-flow']
-  }
+  if (args.includes('--device')) return ['login', '--use-device-flow']
   return ['login']
 }
-
 type LoginMode = 'browser' | 'manual'
 
 function clearScreen(): void {
@@ -228,6 +225,25 @@ async function guidedAdd(args: string[]): Promise<number> {
   if (!mode) return 1
   const loginArgs = buildLoginArgsFromFlags(args, mode)
 
+  if (mode === 'manual') {
+    clearScreen()
+    console.log('+ Manual / Incognito Sign In\n')
+    console.log(
+      'Kiro CLI does not expose the normal /signin?redirect_from=kirocli URL without opening a browser on Windows.'
+    )
+    console.log(
+      'The only printable native Kiro flow is --use-device-flow, but that produces the AWS/device page, not the Kiro chooser.'
+    )
+    console.log(
+      'Manual mode stopped before logout/browser open so it does not give you the wrong login page.'
+    )
+    console.log('')
+    console.log(
+      'Use Open Browser (Easy), finish the Kiro chooser login, then the manager will import it automatically.'
+    )
+    console.log('Or run `kiro-cli login` yourself, finish login, then run `kiro-auth sync`.')
+    return 1
+  }
   if (!shouldSkipLogout(args)) {
     clearScreen()
     console.log('+ Confirm Account Change\n')
@@ -252,17 +268,9 @@ async function guidedAdd(args: string[]): Promise<number> {
   clearScreen()
   console.log('+ Kiro Sign In\n')
   console.log(`Launching: kiro-cli ${loginArgs.join(' ')}`)
-  if (mode === 'manual') {
-    await runManualLogin(loginArgs)
-    console.log(
-      '\nManual link/code copied. Complete sign-in in your browser, then run `kiro-auth sync`.'
-    )
-    return 0
-  } else {
-    const login = runKiroCli(loginArgs, { stdio: 'inherit' })
-    if (login.error) throw login.error
-    if (typeof login.status === 'number' && login.status !== 0) return login.status
-  }
+  const login = runKiroCli(loginArgs, { stdio: 'inherit' })
+  if (login.error) throw login.error
+  if (typeof login.status === 'number' && login.status !== 0) return login.status
 
   clearScreen()
   console.log('+ Import New Kiro Account\n')

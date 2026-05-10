@@ -229,7 +229,7 @@ kiro-auth add
 kiro-auth switch 2
 ```
 
-`kiro-auth add` is a guided flow: it saves the active Kiro CLI login, shows an interactive `Open Browser (Easy)` / `Manual / Incognito` chooser, asks for confirmation, logs out the single active Kiro CLI session, launches the selected native `kiro-cli login` flow, and imports the new login when Kiro finishes. Manual mode copies the manual URL/code to the clipboard, then stops the Kiro CLI poller to avoid browser auto-open; complete sign-in manually and run `kiro-auth sync`. Use `kiro-auth sync` when you only want to import the currently active Kiro CLI session without logging out.
+`kiro-auth add` is a guided flow: it saves the active Kiro CLI login, shows an interactive `Open Browser (Easy)` / `Manual / Incognito` chooser, asks for confirmation, logs out the single active Kiro CLI session, launches the selected native `kiro-cli login` flow, and imports the new login when Kiro finishes. Manual mode intentionally stops before logout/browser open because Kiro CLI does not expose the normal `/signin?redirect_from=kirocli` URL without opening the browser; use Easy mode for the working Kiro chooser flow. Use `kiro-auth sync` when you only want to import the currently active Kiro CLI session without logging out.
 
 Launch the interactive Ink TUI with the short command:
 
