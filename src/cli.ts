@@ -235,6 +235,14 @@ function listen(server: Server): Promise<number> {
   })
 }
 
+function formatUrlPreview(value: string): string {
+  const match = value.match(
+    /^(https:\/\/app\.kiro\.dev\/signin\?state=[^&]+).*(&redirect_from=kirocli)$/
+  )
+  if (!match) return value.length > 88 ? `${value.slice(0, 84)}...` : value
+  return `${match[1]}...${match[2]}`
+}
+
 function renderManualLoginScreen(state: {
   command: string
   url?: string
@@ -245,16 +253,22 @@ function renderManualLoginScreen(state: {
   clearScreen()
   console.log('+ Manual / Incognito Sign In\n')
   console.log(`Launching: ${state.command}`)
-  console.log('Waiting for Kiro CLI to generate the real Kiro sign-in link...')
   console.log('')
-  if (state.url) console.log(`Go to: ${state.url}`)
-  if (state.copied) console.log('Copied login link to clipboard.')
-  else console.log('Waiting for Kiro CLI to open the auth portal...')
+  if (state.url) {
+    console.log('Kiro chooser link copied to clipboard.')
+    console.log(`Preview: ${formatUrlPreview(state.url)}`)
+  } else {
+    console.log('Waiting for Kiro CLI to generate the real Kiro chooser link...')
+  }
+  console.log('')
+  if (state.copied) console.log('Open your browser/incognito and paste the copied link.')
+  else console.log('Do not use the temporary 127.0.0.1 tab; it is only the capture page.')
   console.log('')
   console.log(state.status)
-  if (state.lastOutput.length) {
+  if (!state.url && state.lastOutput.length) {
     console.log('\nKiro output:')
-    for (const line of state.lastOutput.slice(-5)) console.log(`  ${line}`)
+    const visible = state.lastOutput.filter((line) => !line.includes('Opening auth portal'))
+    for (const line of visible.slice(-3)) console.log(`  ${line}`)
   }
 }
 
@@ -281,8 +295,7 @@ async function runManualPortalLogin(loginArgs: string[]): Promise<void> {
       state.url = `https://app.kiro.dev${rawUrl}`
       copyToClipboard(state.url)
       state.copied = true
-      state.status =
-        'Finish the copied Kiro sign-in link in your browser. This terminal is waiting for Kiro CLI to complete login.'
+      state.status = 'Waiting for Kiro CLI to complete login after you finish the copied link.'
       renderManualLoginScreen(state)
     }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
