@@ -32,6 +32,9 @@
     "type": "git",
     "url": "git+https://github.com/tickernelz/opencode-kiro-auth.git"
   },
+  "engines": {
+    "node": ">=22.5"
+  },
   "publishConfig": {
     "access": "public"
   },

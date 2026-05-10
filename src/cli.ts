@@ -1,12 +1,10 @@
 #!/usr/bin/env node
-import { render } from 'ink'
 import { spawn, spawnSync, type SpawnOptions } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
 import { platform } from 'node:os'
 import { basename } from 'node:path'
 import { stdin as input, stdout as output } from 'node:process'
-import { createInterface, emitKeypressEvents } from 'node:readline'
-import { createElement } from 'react'
+import { emitKeypressEvents } from 'node:readline'
 import {
   addCurrentKiroCliAccount,
   enableAccount,
@@ -17,7 +15,7 @@ import {
   switchAccount,
   type CommandResult
 } from './cli-service.js'
-import { KiroAuthTui } from './tui.js'
+import { runKiroAuthTui } from './tui.js'
 
 function help(): CommandResult {
   return {
@@ -83,25 +81,18 @@ export function runCli(argv: string[] = process.argv.slice(2)): CommandResult {
     case '-h':
       return help()
     case 'tui':
-      return { exitCode: 0, lines: [] }
+      return {
+        exitCode: 1,
+        lines: [
+          'The TUI requires an interactive terminal. Run `kiro-auth tui` directly in a TTY, or use `kiro-auth --help` for non-interactive commands.'
+        ]
+      }
     default:
       return {
         exitCode: 1,
         lines: [`Unknown command: ${command}`, ...help().lines]
       }
   }
-}
-
-function askQuestion(prompt: string): Promise<string> {
-  if (input.isTTY) input.setRawMode(false)
-  input.resume()
-  const rl = createInterface({ input, output, terminal: true })
-  return new Promise((resolve) => {
-    rl.question(prompt, (answer) => {
-      rl.close()
-      resolve(answer)
-    })
-  })
 }
 
 function shouldSkipLogout(args: string[]): boolean {
@@ -133,19 +124,99 @@ function stripAnsi(value: string): string {
   return value.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
 }
 
-function renderLoginModeMenu(selected: number): void {
-  const options = ['Open Browser (Easy)', 'Manual / Incognito']
-  clearScreen()
-  output.write('+ Get Started\n')
-  output.write('  Choose how you want to continue.\n\n')
-  output.write('  Sign in\n')
-  for (let index = 0; index < options.length; index += 1) {
-    const prefix = index === selected ? '> ' : '  '
-    output.write(`${prefix}${options[index]}\n`)
+function terminalWidth(): number {
+  return Math.max(24, Math.min(100, output.columns || 80))
+}
+
+function fitTerminal(value: string, width: number): string {
+  const clean = value.replace(/\s+/g, ' ').trim()
+  if (clean.length <= width) return clean
+  if (width <= 1) return clean.slice(0, width)
+  return `${clean.slice(0, width - 1)}…`
+}
+
+function wrapTerminal(value: string, width: number, indent = ''): string[] {
+  const available = Math.max(8, width - indent.length)
+  const words = value.replace(/\s+/g, ' ').trim().split(' ')
+  const lines: string[] = []
+  let line = ''
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word
+    if (next.length > available && line) {
+      lines.push(`${indent}${line}`)
+      line = word
+    } else {
+      line = next
+    }
   }
-  output.write('\n  0 Back\n\n')
-  output.write('  ↑↓ Move | Enter Select | 1 Easy | 2 Manual | Q Back\n')
-  output.write('+ ')
+  if (line) lines.push(`${indent}${line}`)
+  return lines
+}
+
+const CLI_ANSI = {
+  reset: '\x1b[0m',
+  green: '\x1b[32m',
+  cyan: '\x1b[36m',
+  yellow: '\x1b[33m',
+  muted: '\x1b[90m',
+  bgGreen: '\x1b[42m',
+  black: '\x1b[30m',
+  bold: '\x1b[1m'
+} as const
+
+function cliPaint(value: string, code: string): string {
+  return `${code}${value}${CLI_ANSI.reset}`
+}
+
+function cliSelected(value: string, width: number): string {
+  return ` ${CLI_ANSI.bgGreen}${CLI_ANSI.black}${CLI_ANSI.bold}${fitTerminal(value, Math.max(8, width - 2))}${CLI_ANSI.reset}`
+}
+function renderMenuScreen(
+  title: string,
+  subtitle: string,
+  items: Array<{ label: string; hint?: string }>,
+  selected: number,
+  help: string
+): void {
+  const width = terminalWidth()
+  clearScreen()
+  output.write(`${cliPaint('+', CLI_ANSI.green)} ${cliPaint(title, CLI_ANSI.cyan)}\n`)
+  for (const line of wrapTerminal(subtitle, width, '  ')) {
+    output.write(`${cliPaint(line, CLI_ANSI.muted)}\n`)
+  }
+  output.write('\n')
+  output.write(`  ${cliPaint('Sign in', CLI_ANSI.muted)}\n`)
+  for (const [index, item] of items.entries()) {
+    const selectedRow = index === selected
+    if (selectedRow) {
+      output.write(`${cliSelected(`> ${item.label}`, width)}\n`)
+      if (item.hint) {
+        for (const line of wrapTerminal(item.hint, width, '   ')) {
+          output.write(`${cliPaint(line, CLI_ANSI.muted)}\n`)
+        }
+      }
+    } else {
+      output.write(
+        ` ${cliPaint('o', CLI_ANSI.muted)} ${cliPaint(fitTerminal(item.label, Math.max(8, width - 4)), CLI_ANSI.green)}\n`
+      )
+    }
+  }
+  output.write(` ${cliPaint(fitTerminal(help, Math.max(8, width - 2)), CLI_ANSI.muted)}\n`)
+  output.write(`${cliPaint('+', CLI_ANSI.green)}\n`)
+}
+
+function renderStatusScreen(title: string, lines: string[], help?: string): void {
+  const width = terminalWidth()
+  clearScreen()
+  output.write(`${cliPaint('+', CLI_ANSI.green)} ${cliPaint(title, CLI_ANSI.cyan)}\n`)
+  for (const line of lines) {
+    for (const wrapped of wrapTerminal(line, width, '  ')) {
+      output.write(`${wrapped}\n`)
+    }
+  }
+  if (help)
+    output.write(` ${cliPaint(fitTerminal(help, Math.max(8, width - 2)), CLI_ANSI.muted)}\n`)
+  output.write(`${cliPaint('+', CLI_ANSI.green)}\n`)
 }
 
 async function selectLoginMode(): Promise<LoginMode | null> {
@@ -154,7 +225,25 @@ async function selectLoginMode(): Promise<LoginMode | null> {
   input.setRawMode(true)
   input.resume()
   let selected = 0
-  renderLoginModeMenu(selected)
+  const items = [
+    { label: 'Open Browser (Easy)', hint: 'Use normal Kiro CLI browser login.' },
+    {
+      label: 'Manual / Incognito',
+      hint: 'Copy the real Kiro chooser link for another browser/profile.'
+    },
+    { label: 'Back', hint: 'Return to account manager.' }
+  ]
+  const draw = () =>
+    renderMenuScreen(
+      'Kiro Add Account',
+      'Choose how to sign in.',
+      items,
+      selected,
+      terminalWidth() < 58
+        ? '↑↓ Move | Enter | Q Back'
+        : '↑↓ Move | Enter Select | 1 Easy | 2 Manual | Q Back'
+    )
+  draw()
 
   return new Promise((resolve) => {
     const cleanup = () => {
@@ -173,8 +262,9 @@ async function selectLoginMode(): Promise<LoginMode | null> {
         resolve(null)
         return
       }
-      if (key.name === 'up' || str === 'k') selected = selected === 0 ? 1 : 0
-      else if (key.name === 'down' || str === 'j') selected = selected === 1 ? 0 : 1
+      if (key.name === 'up' || str === 'k')
+        selected = selected === 0 ? items.length - 1 : selected - 1
+      else if (key.name === 'down' || str === 'j') selected = (selected + 1) % items.length
       else if (str === '1') {
         cleanup()
         resolve('browser')
@@ -185,15 +275,47 @@ async function selectLoginMode(): Promise<LoginMode | null> {
         return
       } else if (key.name === 'return') {
         cleanup()
-        resolve(selected === 0 ? 'browser' : 'manual')
+        resolve(selected === 0 ? 'browser' : selected === 1 ? 'manual' : null)
         return
       }
-      renderLoginModeMenu(selected)
+      draw()
     }
     input.on('keypress', onKey)
   })
 }
 
+async function confirmScreen(title: string, message: string): Promise<string> {
+  if (!input.isTTY) return 'no'
+  emitKeypressEvents(input)
+  input.setRawMode(true)
+  input.resume()
+  renderStatusScreen(title, [message], 'Y Confirm | N/Q Back')
+  return new Promise((resolve) => {
+    const cleanup = () => {
+      input.off('keypress', onKey)
+      input.setRawMode(false)
+      output.write('\n')
+    }
+    const onKey = (str: string, key: { name?: string; ctrl?: boolean }) => {
+      if (key.ctrl && key.name === 'c') {
+        cleanup()
+        resolve('no')
+        return
+      }
+      const value = str.toLowerCase()
+      if (value === 'y') {
+        cleanup()
+        resolve('yes')
+        return
+      }
+      if (value === 'n' || value === 'q' || key.name === 'escape') {
+        cleanup()
+        resolve('no')
+      }
+    }
+    input.on('keypress', onKey)
+  })
+}
 function printResult(result: CommandResult): void {
   for (const line of result.lines) console.log(line)
 }
@@ -250,26 +372,34 @@ function renderManualLoginScreen(state: {
   status: string
   lastOutput: string[]
 }): void {
-  clearScreen()
-  console.log('+ Manual / Incognito Sign In\n')
-  console.log(`Launching: ${state.command}`)
-  console.log('')
+  const lines = [`Launching: ${state.command}`]
   if (state.url) {
-    console.log('Kiro chooser link copied to clipboard.')
-    console.log(`Preview: ${formatUrlPreview(state.url)}`)
+    lines.push('Kiro chooser link copied to clipboard.')
+    lines.push(`Preview: ${formatUrlPreview(state.url)}`)
   } else {
-    console.log('Waiting for Kiro CLI to generate the real Kiro chooser link...')
+    lines.push('Waiting for Kiro CLI to generate the real Kiro chooser link...')
   }
-  console.log('')
-  if (state.copied) console.log('Open your browser/incognito and paste the copied link.')
-  else console.log('Do not use the temporary 127.0.0.1 tab; it is only the capture page.')
-  console.log('')
-  console.log(state.status)
-  if (!state.url && state.lastOutput.length) {
-    console.log('\nKiro output:')
-    const visible = state.lastOutput.filter((line) => !line.includes('Opening auth portal'))
-    for (const line of visible.slice(-3)) console.log(`  ${line}`)
-  }
+  lines.push(
+    state.copied
+      ? 'Open your browser/incognito and paste the copied link.'
+      : 'The temporary localhost tab may flicker and close after copying the link.'
+  )
+  lines.push(state.status)
+  const visible = state.lastOutput.filter((line) => !line.includes('Opening auth portal')).slice(-3)
+  for (const line of visible) lines.push(`Kiro: ${line}`)
+  renderStatusScreen('Manual / Incognito Sign In', lines)
+}
+
+function shouldRenderKiroOutput(previous: string[], next: string[], copied: boolean): boolean {
+  if (previous.join('\n') === next.join('\n')) return false
+  if (!copied) return true
+  const meaningful = next.filter(
+    (line) => !line.includes('Logging in') && !line.includes('Opening auth portal')
+  )
+  const previousMeaningful = previous.filter(
+    (line) => !line.includes('Logging in') && !line.includes('Opening auth portal')
+  )
+  return meaningful.join('\n') !== previousMeaningful.join('\n')
 }
 
 async function runManualPortalLogin(loginArgs: string[]): Promise<void> {
@@ -295,7 +425,8 @@ async function runManualPortalLogin(loginArgs: string[]): Promise<void> {
       state.url = `https://app.kiro.dev${rawUrl}`
       copyToClipboard(state.url)
       state.copied = true
-      state.status = 'Waiting for Kiro CLI to complete login after you finish the copied link.'
+      state.status =
+        'Copied the real Kiro chooser link. Continue in the browser/profile you choose.'
       renderManualLoginScreen(state)
     }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
@@ -331,12 +462,15 @@ async function runManualPortalLogin(loginArgs: string[]): Promise<void> {
   function inspect(chunk: Buffer): void {
     const text = stripAnsi(chunk.toString('utf8'))
     buffer = (buffer + text).slice(-4096)
-    state.lastOutput = buffer
+    const nextOutput = buffer
       .split(/\r?\n|\r/)
       .map((line) => line.trim())
       .filter(Boolean)
       .slice(-8)
-    renderManualLoginScreen(state)
+    if (shouldRenderKiroOutput(state.lastOutput, nextOutput, state.copied)) {
+      state.lastOutput = nextOutput
+      renderManualLoginScreen(state)
+    }
   }
 
   child.stdout?.on('data', inspect)
@@ -373,7 +507,6 @@ async function runManualPortalLogin(loginArgs: string[]): Promise<void> {
     })
   })
 }
-
 async function guidedAdd(args: string[]): Promise<number> {
   if (args.includes('--sync-only')) {
     printResult(addCurrentKiroCliAccount())
@@ -395,17 +528,12 @@ async function guidedAdd(args: string[]): Promise<number> {
   const loginArgs = buildLoginArgsFromFlags(args, mode)
 
   if (!shouldSkipLogout(args)) {
-    clearScreen()
-    console.log('+ Confirm Account Change\n')
     const answer = args.includes('--yes')
       ? 'yes'
-      : (
-          await askQuestion(
-            'This will log out the current Kiro CLI session after saving it. Continue? [y/N]: '
-          )
+      : await confirmScreen(
+          'Confirm Account Change',
+          'This will log out the current Kiro CLI session after saving it. Continue?'
         )
-          .trim()
-          .toLowerCase()
     if (answer !== 'y' && answer !== 'yes') return 1
 
     clearScreen()
@@ -433,17 +561,7 @@ async function guidedAdd(args: string[]): Promise<number> {
 }
 
 async function runTui(): Promise<'quit' | 'add'> {
-  let requested: 'quit' | 'add' = 'quit'
-  const instance = render(
-    createElement(KiroAuthTui as never, {
-      onRequestGuidedAdd: () => {
-        requested = 'add'
-        instance.unmount()
-      }
-    })
-  )
-  await instance.waitUntilExit()
-  return requested
+  return runKiroAuthTui()
 }
 
 if (process.argv[1] && basename(process.argv[1]) === 'cli.js') {

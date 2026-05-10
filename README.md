@@ -242,16 +242,18 @@ kiro-auth tui
 TUI shortcuts:
 
 - `up/down` or `j/k`: move selection
-- `enter`: open the action menu
-- `a`: leave the TUI and launch the guided add-account login flow immediately
-- `y`: sync/import the currently active `kiro-cli` login
-- `s`: switch Kiro CLI to the selected account
-- `e`: enable/disable the selected account
-- `r`: reset local health/rate-limit state
-- `x`: remove with confirmation
-- `f`: refresh
+- `enter`: open selected account details
+- `1-9`: quick switch to an account with confirmation
+- `/`: search/filter accounts
+- `g`: leave the dashboard and launch guided add-account login
+- `i`: import the currently active `kiro-cli` login into the pool
+- `s`: confirm and switch Kiro CLI to the selected saved account
+- `e`: enable/disable the selected account with confirmation
+- `r`: confirm and reset local health/rate-limit state
+- `x`: remove with confirmation; this does not log out Kiro CLI
+- `d`: diagnostics with DB paths
 - `?`: help
-- `q`: quit
+- `q` / `esc`: back or quit
 
 Manual alternative: if you do not want the manager flow, log in with Kiro CLI first, then sync:
 
