@@ -6,9 +6,7 @@ import { createInterface } from 'node:readline'
 import { createElement } from 'react'
 import {
   type CommandResult,
-  type LoginProvider,
   addCurrentKiroCliAccount,
-  buildKiroLoginArgs,
   enableAccount,
   listAccounts,
   removeAccount,
@@ -28,7 +26,7 @@ function help(): CommandResult {
       '  opencode-kiro-auth',
       '  opencode-kiro-auth tui',
       '  opencode-kiro-auth accounts list',
-      '  opencode-kiro-auth accounts add [--sync-only] [--google|--github|--device|--idc]',
+      '  opencode-kiro-auth accounts add [--sync-only] [--no-logout]',
       '  opencode-kiro-auth accounts sync',
       '  opencode-kiro-auth accounts switch <index>',
       '  opencode-kiro-auth accounts enable <index>',
@@ -41,7 +39,7 @@ function help(): CommandResult {
       '  list, add, sync, switch, enable, disable, reset, remove, status',
       '',
       'Add flow:',
-      '  add        saves current Kiro login, opens kiro-cli login, then syncs the new account',
+      '  add        saves current Kiro login, opens the real Kiro sign-in flow, then syncs',
       '  sync       only imports the currently active kiro-cli login'
     ]
   }
@@ -91,14 +89,6 @@ export function runCli(argv: string[] = process.argv.slice(2)): CommandResult {
   }
 }
 
-function providerFromArgs(args: string[]): LoginProvider | undefined {
-  if (args.includes('--google')) return 'google'
-  if (args.includes('--github')) return 'github'
-  if (args.includes('--device')) return 'device'
-  if (args.includes('--idc') || args.includes('--pro')) return 'idc'
-  return undefined
-}
-
 function askQuestion(prompt: string): Promise<string> {
   if (input.isTTY) input.setRawMode(false)
   input.resume()
@@ -111,24 +101,18 @@ function askQuestion(prompt: string): Promise<string> {
   })
 }
 
-async function promptProvider(): Promise<LoginProvider> {
-  output.write('\nAdd Kiro account\n')
-  output.write('1. Google Builder ID (free)\n')
-  output.write('2. GitHub Builder ID (free)\n')
-  output.write('3. Device flow Builder ID (free)\n')
-  output.write('4. IAM Identity Center / Pro\n')
-  const answer = (await askQuestion('Choose auth method [1]: ')).trim()
-  if (answer === '2') return 'github'
-  if (answer === '3') return 'device'
-  if (answer === '4') return 'idc'
-  return 'google'
+function shouldSkipLogout(args: string[]): boolean {
+  return args.includes('--no-logout') || args.includes('--skip-logout')
 }
 
-async function promptIdc(): Promise<{ startUrl?: string; region?: string }> {
-  const startUrl = (await askQuestion('Identity Center start URL: ')).trim()
-  const region = (await askQuestion('Identity Center region [us-east-1]: ')).trim()
-  return { startUrl, region: region || 'us-east-1' }
+function buildLoginArgsFromFlags(args: string[]): string[] {
+  if (args.includes('--google')) return ['login', '--license', 'free', '--social', 'google']
+  if (args.includes('--github')) return ['login', '--license', 'free', '--social', 'github']
+  if (args.includes('--device')) return ['login', '--license', 'free', '--use-device-flow']
+  if (args.includes('--idc') || args.includes('--pro')) return ['login', '--license', 'pro']
+  return ['login']
 }
+
 function printResult(result: CommandResult): void {
   for (const line of result.lines) console.log(line)
 }
@@ -147,26 +131,26 @@ async function guidedAdd(args: string[]): Promise<number> {
     console.log('Continuing to Kiro login anyway.')
   }
 
-  const provider = providerFromArgs(args) || (await promptProvider())
-  const idc = provider === 'idc' ? await promptIdc() : undefined
-  const loginArgs = buildKiroLoginArgs(provider, idc)
+  const loginArgs = buildLoginArgsFromFlags(args)
 
-  if (!args.includes('--yes')) {
-    const answer = (
-      await askQuestion(
-        'This will log out the current Kiro CLI session after saving it. Continue? [y/N]: '
+  if (!shouldSkipLogout(args)) {
+    if (!args.includes('--yes')) {
+      const answer = (
+        await askQuestion(
+          'This will log out the current Kiro CLI session after saving it. Continue? [y/N]: '
+        )
       )
-    )
-      .trim()
-      .toLowerCase()
-    if (answer !== 'y' && answer !== 'yes') return 1
-  }
+        .trim()
+        .toLowerCase()
+      if (answer !== 'y' && answer !== 'yes') return 1
+    }
 
-  console.log(
-    '\nLogging out of the current Kiro CLI session so the next login can use another account...'
-  )
-  const logout = runKiroCli(['logout'], { stdio: 'inherit' })
-  if (logout.error) throw logout.error
+    console.log(
+      '\nLogging out of the current Kiro CLI session so the next login can use another account...'
+    )
+    const logout = runKiroCli(['logout'], { stdio: 'inherit' })
+    if (logout.error) throw logout.error
+  }
 
   console.log(`\nLaunching: kiro-cli ${loginArgs.join(' ')}`)
   const login = runKiroCli(loginArgs, { stdio: 'inherit' })
