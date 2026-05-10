@@ -135,11 +135,26 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
           }
         },
         "auto": { "name": "Auto (1.0x)" },
-        "claude-sonnet-4": { "name": "Claude Sonnet 4.0 (1.3x)", "limit": { "context": 200000, "output": 64000 } },
-        "deepseek-3.2": { "name": "DeepSeek 3.2 (0.25x)", "limit": { "context": 128000, "output": 64000 } },
-        "minimax-m2.5": { "name": "MiniMax 2.5 (0.25x)", "limit": { "context": 200000, "output": 64000 } },
-        "minimax-m2.1": { "name": "MiniMax 2.1 (0.15x)", "limit": { "context": 200000, "output": 64000 } },
-        "qwen3-coder-next": { "name": "Qwen3 Coder Next (0.05x)", "limit": { "context": 256000, "output": 64000 } }
+        "claude-sonnet-4": {
+          "name": "Claude Sonnet 4.0 (1.3x)",
+          "limit": { "context": 200000, "output": 64000 }
+        },
+        "deepseek-3.2": {
+          "name": "DeepSeek 3.2 (0.25x)",
+          "limit": { "context": 128000, "output": 64000 }
+        },
+        "minimax-m2.5": {
+          "name": "MiniMax 2.5 (0.25x)",
+          "limit": { "context": 200000, "output": 64000 }
+        },
+        "minimax-m2.1": {
+          "name": "MiniMax 2.1 (0.15x)",
+          "limit": { "context": 200000, "output": 64000 }
+        },
+        "qwen3-coder-next": {
+          "name": "Qwen3 Coder Next (0.05x)",
+          "limit": { "context": 256000, "output": 64000 }
+        }
       }
     }
   }
@@ -209,6 +224,27 @@ kiro-auth list
 kiro-auth add
 kiro-auth switch 2
 ```
+
+Launch the interactive Ink TUI with the short command:
+
+```bash
+kiro-auth
+# or
+kiro-auth tui
+```
+
+TUI shortcuts:
+
+- `up/down` or `j/k`: move selection
+- `enter`: open the action menu
+- `a`: add/sync the current `kiro-cli` login into the pool
+- `s`: switch Kiro CLI to the selected account
+- `e`: enable/disable the selected account
+- `r`: reset local health/rate-limit state
+- `x`: remove with confirmation
+- `f`: refresh
+- `?`: help
+- `q`: quit
 
 To add another account to the pool, log in with Kiro CLI first, then sync:
 
