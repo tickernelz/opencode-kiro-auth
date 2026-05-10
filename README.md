@@ -229,7 +229,7 @@ kiro-auth add
 kiro-auth switch 2
 ```
 
-`kiro-auth add` is a guided flow: it saves the active Kiro CLI login, shows an interactive `Open Browser (Easy)` / `Manual / Incognito` chooser, asks for confirmation, logs out the single active Kiro CLI session, launches the selected native `kiro-cli login` flow, and imports the new login when Kiro finishes. Manual mode intentionally stops before logout/browser open because Kiro CLI does not expose the normal `/signin?redirect_from=kirocli` URL without opening the browser; use Easy mode for the working Kiro chooser flow. Use `kiro-auth sync` when you only want to import the currently active Kiro CLI session without logging out.
+`kiro-auth add` is a guided flow: it saves the active Kiro CLI login, shows an interactive `Open Browser (Easy)` / `Manual / Incognito` chooser, asks for confirmation, logs out the single active Kiro CLI session, launches normal `kiro-cli login`, and imports the new login when Kiro finishes. Easy mode lets Kiro open the browser normally. Manual / Incognito mode captures the real Kiro chooser URL (`https://app.kiro.dev/signin?...redirect_from=kirocli`), copies it to your clipboard, and keeps Kiro CLI running so the localhost callback can complete after you finish login. Use `kiro-auth add --manual` to skip the chooser, `kiro-auth add --browser` for Easy mode, or `kiro-auth sync` when you only want to import the currently active Kiro CLI session without logging out.
 
 Launch the interactive Ink TUI with the short command:
 
@@ -243,7 +243,7 @@ TUI shortcuts:
 
 - `up/down` or `j/k`: move selection
 - `enter`: open the action menu
-- `a`: leave the TUI and launch the guided add-account login flow
+- `a`: leave the TUI and launch the guided add-account login flow immediately
 - `y`: sync/import the currently active `kiro-cli` login
 - `s`: switch Kiro CLI to the selected account
 - `e`: enable/disable the selected account
@@ -253,7 +253,7 @@ TUI shortcuts:
 - `?`: help
 - `q`: quit
 
-Manual alternative: to add another account to the pool yourself, log in with Kiro CLI first, then sync:
+Manual alternative: if you do not want the manager flow, log in with Kiro CLI first, then sync:
 
 ```bash
 kiro-cli logout

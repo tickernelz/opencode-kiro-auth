@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { render } from 'ink'
 import { spawn, spawnSync, type SpawnOptions } from 'node:child_process'
+import { createServer, type Server } from 'node:http'
 import { platform } from 'node:os'
 import { basename } from 'node:path'
 import { stdin as input, stdout as output } from 'node:process'
@@ -28,7 +29,7 @@ function help(): CommandResult {
       '  opencode-kiro-auth',
       '  opencode-kiro-auth tui',
       '  opencode-kiro-auth accounts list',
-      '  opencode-kiro-auth accounts add [--sync-only] [--manual] [--no-logout]',
+      '  opencode-kiro-auth accounts add [--sync-only] [--manual|--browser] [--yes] [--no-logout]',
       '  opencode-kiro-auth accounts sync',
       '  opencode-kiro-auth accounts switch <index>',
       '  opencode-kiro-auth accounts enable <index>',
@@ -41,7 +42,7 @@ function help(): CommandResult {
       '  list, add, sync, switch, enable, disable, reset, remove, status',
       '',
       'Add flow:',
-      '  add        saves current Kiro login, opens the real Kiro sign-in flow, then syncs',
+      '  add        saves current Kiro login, opens/copies the real Kiro sign-in flow, then syncs',
       '  sync       only imports the currently active kiro-cli login'
     ]
   }
@@ -107,14 +108,22 @@ function shouldSkipLogout(args: string[]): boolean {
   return args.includes('--no-logout') || args.includes('--skip-logout')
 }
 
-function buildLoginArgsFromFlags(args: string[], _mode: LoginMode): string[] {
+type LoginMode = 'browser' | 'manual'
+
+function requestedLoginMode(args: string[]): LoginMode | null {
+  if (args.includes('--manual')) return 'manual'
+  if (args.includes('--browser') || args.includes('--easy')) return 'browser'
+  return null
+}
+
+function buildLoginArgsFromFlags(args: string[], mode: LoginMode): string[] {
   if (args.includes('--google')) return ['login', '--license', 'free', '--social', 'google']
   if (args.includes('--github')) return ['login', '--license', 'free', '--social', 'github']
   if (args.includes('--idc') || args.includes('--pro')) return ['login', '--license', 'pro']
+  if (mode === 'manual') return ['login']
   if (args.includes('--device')) return ['login', '--use-device-flow']
   return ['login']
 }
-type LoginMode = 'browser' | 'manual'
 
 function clearScreen(): void {
   output.write('\x1b[2J\x1b[3J\x1b[H')
@@ -201,8 +210,139 @@ function copyToClipboard(value: string): void {
     }
     spawnSync('xclip', ['-selection', 'clipboard'], { input: value, encoding: 'utf8' })
   } catch {
-    // Clipboard copy is best effort; the link remains printed by Kiro CLI.
+    // Clipboard copy is best effort; the link remains printed by the manager.
   }
+}
+
+function spawnKiroCli(args: string[], options: SpawnOptions) {
+  if (platform() === 'win32') {
+    return spawn('cmd.exe', ['/d', '/s', '/c', ['kiro-cli', ...args].join(' ')], options)
+  }
+  return spawn('kiro-cli', args, options)
+}
+
+function listen(server: Server): Promise<number> {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      if (!address || typeof address === 'string') {
+        reject(new Error('Failed to start local Kiro auth capture server.'))
+        return
+      }
+      resolve(address.port)
+    })
+  })
+}
+
+function renderManualLoginScreen(state: {
+  command: string
+  url?: string
+  copied: boolean
+  status: string
+  lastOutput: string[]
+}): void {
+  clearScreen()
+  console.log('+ Manual / Incognito Sign In\n')
+  console.log(`Launching: ${state.command}`)
+  console.log('Waiting for Kiro CLI to generate the real Kiro sign-in link...')
+  console.log('')
+  if (state.url) console.log(`Go to: ${state.url}`)
+  if (state.copied) console.log('Copied login link to clipboard.')
+  else console.log('Waiting for Kiro CLI to open the auth portal...')
+  console.log('')
+  console.log(state.status)
+  if (state.lastOutput.length) {
+    console.log('\nKiro output:')
+    for (const line of state.lastOutput.slice(-5)) console.log(`  ${line}`)
+  }
+}
+
+async function runManualPortalLogin(loginArgs: string[]): Promise<void> {
+  let captured = false
+  const state: {
+    command: string
+    url?: string
+    copied: boolean
+    status: string
+    lastOutput: string[]
+  } = {
+    command: ['kiro-cli', ...loginArgs].join(' '),
+    copied: false,
+    status:
+      'Manual mode copies the real Kiro chooser URL. Open it in incognito, finish sign-in, then return here.',
+    lastOutput: []
+  }
+
+  const server = createServer((request, response) => {
+    const rawUrl = request.url || '/'
+    if (!captured && rawUrl.startsWith('/signin?')) {
+      captured = true
+      state.url = `https://app.kiro.dev${rawUrl}`
+      copyToClipboard(state.url)
+      state.copied = true
+      state.status =
+        'Finish the copied Kiro sign-in link in your browser. This terminal is waiting for Kiro CLI to complete login.'
+      renderManualLoginScreen(state)
+    }
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    response.end(
+      '<!doctype html><title>Kiro auth link copied</title><body>Kiro auth link copied. Return to your terminal.</body>'
+    )
+  })
+
+  const port = await listen(server)
+  const child = spawnKiroCli(loginArgs, {
+    stdio: ['inherit', 'pipe', 'pipe'],
+    env: { ...process.env, KIRO_AUTH_PORTAL_URL: `http://127.0.0.1:${port}` }
+  })
+  let buffer = ''
+  renderManualLoginScreen(state)
+
+  function inspect(chunk: Buffer): void {
+    const text = stripAnsi(chunk.toString('utf8'))
+    buffer = (buffer + text).slice(-4096)
+    state.lastOutput = buffer
+      .split(/\r?\n|\r/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(-8)
+    renderManualLoginScreen(state)
+  }
+
+  child.stdout?.on('data', inspect)
+  child.stderr?.on('data', inspect)
+
+  return new Promise((resolve, reject) => {
+    let done = false
+    const closeServer = () => {
+      try {
+        server.close()
+      } catch {
+        // Ignore shutdown races.
+      }
+    }
+    child.on('error', (error) => {
+      if (done) return
+      done = true
+      closeServer()
+      reject(error)
+    })
+    child.on('close', (code) => {
+      if (done) return
+      done = true
+      closeServer()
+      if (code && code !== 0) {
+        state.status = `Kiro CLI login exited with code ${code}.`
+        renderManualLoginScreen(state)
+        reject(new Error(state.status))
+        return
+      }
+      state.status = 'Kiro CLI login completed.'
+      renderManualLoginScreen(state)
+      resolve()
+    })
+  })
 }
 
 async function guidedAdd(args: string[]): Promise<number> {
@@ -221,29 +361,10 @@ async function guidedAdd(args: string[]): Promise<number> {
     console.log('Continuing to Kiro login anyway.')
   }
 
-  const mode = await selectLoginMode()
+  const mode = requestedLoginMode(args) || (await selectLoginMode())
   if (!mode) return 1
   const loginArgs = buildLoginArgsFromFlags(args, mode)
 
-  if (mode === 'manual') {
-    clearScreen()
-    console.log('+ Manual / Incognito Sign In\n')
-    console.log(
-      'Kiro CLI does not expose the normal /signin?redirect_from=kirocli URL without opening a browser on Windows.'
-    )
-    console.log(
-      'The only printable native Kiro flow is --use-device-flow, but that produces the AWS/device page, not the Kiro chooser.'
-    )
-    console.log(
-      'Manual mode stopped before logout/browser open so it does not give you the wrong login page.'
-    )
-    console.log('')
-    console.log(
-      'Use Open Browser (Easy), finish the Kiro chooser login, then the manager will import it automatically.'
-    )
-    console.log('Or run `kiro-cli login` yourself, finish login, then run `kiro-auth sync`.')
-    return 1
-  }
   if (!shouldSkipLogout(args)) {
     clearScreen()
     console.log('+ Confirm Account Change\n')
@@ -267,121 +388,19 @@ async function guidedAdd(args: string[]): Promise<number> {
 
   clearScreen()
   console.log('+ Kiro Sign In\n')
-  console.log(`Launching: kiro-cli ${loginArgs.join(' ')}`)
-  const login = runKiroCli(loginArgs, { stdio: 'inherit' })
-  if (login.error) throw login.error
-  if (typeof login.status === 'number' && login.status !== 0) return login.status
+  if (mode === 'manual') {
+    await runManualPortalLogin(loginArgs)
+  } else {
+    console.log(`Launching: kiro-cli ${loginArgs.join(' ')}`)
+    const login = runKiroCli(loginArgs, { stdio: 'inherit' })
+    if (login.error) throw login.error
+    if (typeof login.status === 'number' && login.status !== 0) return login.status
+  }
 
   clearScreen()
   console.log('+ Import New Kiro Account\n')
   printResult(addCurrentKiroCliAccount())
   return 0
-}
-
-function makeManualDeviceUrl(code: string): string {
-  return `https://app.kiro.dev/account/device?user_code=${encodeURIComponent(code)}&login_provider=Google`
-}
-
-function renderManualLoginScreen(state: {
-  command: string
-  url?: string
-  code?: string
-  copied: 'none' | 'url' | 'code'
-  status: string
-  lastOutput: string[]
-}): void {
-  clearScreen()
-  console.log('+ Manual / Incognito Sign In\n')
-  console.log(`Launching: ${state.command}`)
-  console.log('Browser auto-open is suppressed by the manager as much as Kiro CLI allows.')
-  console.log('')
-  if (state.url) console.log(`Go to: ${state.url}`)
-  if (state.code) console.log(`Code: ${state.code}`)
-  if (state.copied === 'url') console.log('Copied login link to clipboard.')
-  else if (state.copied === 'code') console.log('Copied login code to clipboard.')
-  else console.log('Waiting for Kiro CLI to print the login URL/code...')
-  console.log('')
-  console.log(state.status)
-  if (state.lastOutput.length) {
-    console.log('\nKiro output:')
-    for (const line of state.lastOutput.slice(-5)) console.log(`  ${line}`)
-  }
-}
-
-function manualLoginSpawnOptions(): SpawnOptions {
-  const env = {
-    ...process.env,
-    BROWSER: platform() === 'win32' ? 'cmd /c exit 0' : 'true',
-    KIRO_DISABLE_BROWSER: '1',
-    NO_BROWSER: '1'
-  }
-  return { stdio: ['inherit', 'pipe', 'pipe'], env }
-}
-
-function runManualLogin(loginArgs: string[]): Promise<void> {
-  const command = platform() === 'win32' ? 'cmd.exe' : 'kiro-cli'
-  const args =
-    platform() === 'win32' ? ['/d', '/s', '/c', ['kiro-cli', ...loginArgs].join(' ')] : loginArgs
-  const child = spawn(command, args, manualLoginSpawnOptions())
-  const state: {
-    command: string
-    url?: string
-    code?: string
-    copied: 'none' | 'url' | 'code'
-    status: string
-    lastOutput: string[]
-  } = {
-    command: ['kiro-cli', ...loginArgs].join(' '),
-    copied: 'none',
-    status: 'Waiting for authorization...',
-    lastOutput: []
-  }
-  let buffer = ''
-  renderManualLoginScreen(state)
-
-  let finishManualCopy: (() => void) | undefined
-  function inspect(chunk: Buffer): void {
-    const text = stripAnsi(chunk.toString('utf8'))
-    buffer = (buffer + text).slice(-4096)
-    state.lastOutput = buffer
-      .split(/\r?\n|\r/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .slice(-8)
-
-    const url = buffer.match(new RegExp('https://app\\.kiro\\.dev/account/device\\?[^\\s]+'))?.[0]
-    const code = buffer.match(/(?:confirm the code:|code:)\s*([A-Z0-9-]+)/i)?.[1]
-    if (url) state.url = url
-    if (code) state.code = code
-    if (!state.url && state.code) state.url = makeManualDeviceUrl(state.code)
-
-    if (state.url && state.copied !== 'url') {
-      copyToClipboard(state.url)
-      state.copied = 'url'
-    } else if (state.code && state.copied === 'none') {
-      copyToClipboard(state.code)
-      state.copied = 'code'
-    }
-    renderManualLoginScreen(state)
-    if (state.url || state.code) finishManualCopy?.()
-  }
-
-  child.stdout?.on('data', inspect)
-  child.stderr?.on('data', inspect)
-  return new Promise((resolve, reject) => {
-    let done = false
-    const finish = () => {
-      if (done) return
-      done = true
-      state.status = 'Manual URL/code copied. Kiro CLI poller stopped to prevent browser auto-open.'
-      renderManualLoginScreen(state)
-      child.kill()
-      resolve()
-    }
-    finishManualCopy = finish
-    child.on('error', reject)
-    child.on('close', () => finish())
-  })
 }
 
 async function runTui(): Promise<'quit' | 'add'> {
@@ -415,9 +434,8 @@ if (process.argv[1] && basename(process.argv[1]) === 'cli.js') {
       if (input.isTTY) input.setRawMode(false)
       input.resume()
       if (action === 'add') {
-        console.log('Run `kiro-auth add` from the terminal to start the guided add-account flow.')
-        console.log('Use `kiro-auth sync` after completing any manual `kiro-cli login`.')
-        process.exit(0)
+        const code = await guidedAdd([])
+        process.exit(code)
       }
       process.exit(0)
     }
