@@ -2,7 +2,7 @@
 import { render } from 'ink'
 import { basename } from 'node:path'
 import { stdin as input, stdout as output } from 'node:process'
-import { createInterface } from 'node:readline/promises'
+import { createInterface } from 'node:readline'
 import { createElement } from 'react'
 import {
   type CommandResult,
@@ -99,35 +99,36 @@ function providerFromArgs(args: string[]): LoginProvider | undefined {
   return undefined
 }
 
+function askQuestion(prompt: string): Promise<string> {
+  if (input.isTTY) input.setRawMode(false)
+  input.resume()
+  const rl = createInterface({ input, output, terminal: true })
+  return new Promise((resolve) => {
+    rl.question(prompt, (answer) => {
+      rl.close()
+      resolve(answer)
+    })
+  })
+}
+
 async function promptProvider(): Promise<LoginProvider> {
-  const rl = createInterface({ input, output })
-  try {
-    output.write('\nAdd Kiro account\n')
-    output.write('1. Google Builder ID (free)\n')
-    output.write('2. GitHub Builder ID (free)\n')
-    output.write('3. Device flow Builder ID (free)\n')
-    output.write('4. IAM Identity Center / Pro\n')
-    const answer = (await rl.question('Choose auth method [1]: ')).trim()
-    if (answer === '2') return 'github'
-    if (answer === '3') return 'device'
-    if (answer === '4') return 'idc'
-    return 'google'
-  } finally {
-    rl.close()
-  }
+  output.write('\nAdd Kiro account\n')
+  output.write('1. Google Builder ID (free)\n')
+  output.write('2. GitHub Builder ID (free)\n')
+  output.write('3. Device flow Builder ID (free)\n')
+  output.write('4. IAM Identity Center / Pro\n')
+  const answer = (await askQuestion('Choose auth method [1]: ')).trim()
+  if (answer === '2') return 'github'
+  if (answer === '3') return 'device'
+  if (answer === '4') return 'idc'
+  return 'google'
 }
 
 async function promptIdc(): Promise<{ startUrl?: string; region?: string }> {
-  const rl = createInterface({ input, output })
-  try {
-    const startUrl = (await rl.question('Identity Center start URL: ')).trim()
-    const region = (await rl.question('Identity Center region [us-east-1]: ')).trim()
-    return { startUrl, region: region || 'us-east-1' }
-  } finally {
-    rl.close()
-  }
+  const startUrl = (await askQuestion('Identity Center start URL: ')).trim()
+  const region = (await askQuestion('Identity Center region [us-east-1]: ')).trim()
+  return { startUrl, region: region || 'us-east-1' }
 }
-
 function printResult(result: CommandResult): void {
   for (const line of result.lines) console.log(line)
 }
@@ -149,6 +150,17 @@ async function guidedAdd(args: string[]): Promise<number> {
   const provider = providerFromArgs(args) || (await promptProvider())
   const idc = provider === 'idc' ? await promptIdc() : undefined
   const loginArgs = buildKiroLoginArgs(provider, idc)
+
+  if (!args.includes('--yes')) {
+    const answer = (
+      await askQuestion(
+        'This will log out the current Kiro CLI session after saving it. Continue? [y/N]: '
+      )
+    )
+      .trim()
+      .toLowerCase()
+    if (answer !== 'y' && answer !== 'yes') return 1
+  }
 
   console.log(
     '\nLogging out of the current Kiro CLI session so the next login can use another account...'
@@ -194,9 +206,12 @@ if (process.argv[1] && basename(process.argv[1]) === 'cli.js') {
     }
     if ((args.length === 0 || args[0] === 'tui') && process.stdin.isTTY && process.stdout.isTTY) {
       const action = await runTui()
+      if (input.isTTY) input.setRawMode(false)
+      input.resume()
       if (action === 'add') {
-        const code = await guidedAdd([])
-        process.exit(code)
+        console.log('Run `kiro-auth add` from the terminal to start the guided add-account flow.')
+        console.log('Use `kiro-auth sync` after completing any manual `kiro-cli login`.')
+        process.exit(0)
       }
       process.exit(0)
     }
