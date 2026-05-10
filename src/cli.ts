@@ -286,9 +286,25 @@ async function runManualPortalLogin(loginArgs: string[]): Promise<void> {
       renderManualLoginScreen(state)
     }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    response.end(
-      '<!doctype html><title>Kiro auth link copied</title><body>Kiro auth link copied. Return to your terminal.</body>'
-    )
+    response.end(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Kiro auth link copied</title>
+    <style>
+      html, body { margin: 0; background: #05070a; color: #e6edf3; font-family: system-ui, sans-serif; }
+      body { padding: 24px; }
+    </style>
+  </head>
+  <body>
+    <p>Kiro auth link copied. Returning you to the terminal...</p>
+    <script>
+      window.open('', '_self');
+      window.close();
+      setTimeout(() => { document.body.textContent = 'Kiro auth link copied. You can close this tab and return to your terminal.'; }, 500);
+    </script>
+  </body>
+</html>`)
   })
 
   const port = await listen(server)
