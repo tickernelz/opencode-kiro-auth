@@ -5,6 +5,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir, platform } from 'node:os'
 import { basename, dirname, join } from 'node:path'
+import { emitKeypressEvents } from 'node:readline'
 
 type SqliteDatabase = {
   exec(sql: string): void
@@ -483,6 +484,118 @@ function removeAccount(indexText: string | undefined): CommandResult {
   return { exitCode: 0, lines: [`Removed account ${index + 1}: ${account.email}`] }
 }
 
+function writeScreen(lines: string[]): void {
+  process.stdout.write(`\x1b[2J\x1b[H${lines.join('\n')}`)
+}
+
+function withRawMode<T>(fn: () => Promise<T>): Promise<T> {
+  const stdin = process.stdin
+  const wasRaw = Boolean(stdin.isTTY && stdin.isRaw)
+  if (stdin.isTTY) {
+    emitKeypressEvents(stdin)
+    stdin.setRawMode(true)
+    stdin.resume()
+  }
+  return fn().finally(() => {
+    if (stdin.isTTY) stdin.setRawMode(wasRaw)
+  })
+}
+
+function readKey(): Promise<{ sequence?: string; name?: string; ctrl?: boolean }> {
+  return new Promise((resolve) => {
+    process.stdin.once('keypress', (_str, key) => resolve(key || {}))
+  })
+}
+
+async function pause(message = 'Press any key to continue'): Promise<void> {
+  writeScreen(['', message])
+  await readKey()
+}
+
+async function selectMenu(title: string, options: string[]): Promise<number | null> {
+  let selected = 0
+
+  while (true) {
+    writeScreen([
+      title,
+      '',
+      ...options.map(
+        (option, index) => `${index === selected ? '>' : ' '} ${index + 1}. ${option}`
+      ),
+      '',
+      'Use up/down, number, enter. q exits.'
+    ])
+
+    const key = await readKey()
+    if (key.ctrl && key.name === 'c') return null
+    if (key.name === 'q' || key.name === 'escape') return null
+    if (key.name === 'up') selected = selected <= 0 ? options.length - 1 : selected - 1
+    else if (key.name === 'down') selected = selected >= options.length - 1 ? 0 : selected + 1
+    else if (key.name === 'return') return selected
+    else if (key.sequence && /^[1-9]$/.test(key.sequence)) {
+      const index = Number.parseInt(key.sequence, 10) - 1
+      if (index >= 0 && index < options.length) return index
+    }
+  }
+}
+
+async function selectAccount(title: string): Promise<number | null> {
+  const accounts = readAccounts()
+  if (accounts.length === 0) {
+    await pause('No Kiro accounts found. Run add first. Press any key to continue.')
+    return null
+  }
+  return selectMenu(
+    title,
+    accounts.map((account, index) => accountLine(account, index))
+  )
+}
+
+async function showResult(result: CommandResult): Promise<void> {
+  writeScreen(result.lines.length ? result.lines : ['Done'])
+  await readKey()
+}
+
+async function runInteractive(): Promise<void> {
+  await withRawMode(async () => {
+    while (true) {
+      const choice = await selectMenu('Kiro Auth Manager', [
+        'List accounts',
+        'Add current kiro-cli account',
+        'Switch account',
+        'Enable account',
+        'Disable account',
+        'Reset account health',
+        'Remove account',
+        'Exit'
+      ])
+      if (choice === null || choice === 7) return
+
+      try {
+        if (choice === 0) {
+          await showResult(listAccounts())
+        } else if (choice === 1) {
+          await showResult(addCurrentKiroCliAccount())
+        } else if (choice >= 2 && choice <= 6) {
+          const accountIndex = await selectAccount('Select Account')
+          if (accountIndex === null) continue
+          const indexText = String(accountIndex + 1)
+          if (choice === 2) await showResult(switchAccount(indexText))
+          else if (choice === 3) await showResult(enableAccount(indexText, true))
+          else if (choice === 4) await showResult(enableAccount(indexText, false))
+          else if (choice === 5) await showResult(resetAccount(indexText))
+          else if (choice === 6) {
+            const confirm = await selectMenu('Remove account?', ['No', 'Yes'])
+            if (confirm === 1) await showResult(removeAccount(indexText))
+          }
+        }
+      } catch (error) {
+        await pause(error instanceof Error ? error.message : String(error))
+      }
+    }
+  })
+}
+
 export function runCli(argv: string[] = process.argv.slice(2)): CommandResult {
   const args = argv[0] === 'accounts' ? argv.slice(1) : argv
   const command = args[0] || 'help'
@@ -520,9 +633,14 @@ export function runCli(argv: string[] = process.argv.slice(2)): CommandResult {
 
 if (process.argv[1] && basename(process.argv[1]) === 'cli.js') {
   try {
-    const result = runCli()
-    for (const line of result.lines) console.log(line)
-    process.exit(result.exitCode)
+    if (process.argv.slice(2).length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
+      await runInteractive()
+      process.exit(0)
+    } else {
+      const result = runCli()
+      for (const line of result.lines) console.log(line)
+      process.exit(result.exitCode)
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
     process.exit(1)
