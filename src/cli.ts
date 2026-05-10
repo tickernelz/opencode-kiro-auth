@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 import { render } from 'ink'
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn, spawnSync, type SpawnOptions } from 'node:child_process'
 import { platform } from 'node:os'
 import { basename } from 'node:path'
 import { stdin as input, stdout as output } from 'node:process'
 import { createInterface, emitKeypressEvents } from 'node:readline'
 import { createElement } from 'react'
 import {
-  type CommandResult,
   addCurrentKiroCliAccount,
   enableAccount,
   listAccounts,
   removeAccount,
   resetAccount,
   runKiroCli,
-  switchAccount
+  switchAccount,
+  type CommandResult
 } from './cli-service.js'
 import { KiroAuthTui } from './tui.js'
 
@@ -119,9 +119,17 @@ function buildLoginArgsFromFlags(args: string[], mode: LoginMode): string[] {
 
 type LoginMode = 'browser' | 'manual'
 
+function clearScreen(): void {
+  output.write('\x1b[2J\x1b[3J\x1b[H')
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+}
+
 function renderLoginModeMenu(selected: number): void {
   const options = ['Open Browser (Easy)', 'Manual / Incognito']
-  output.write('\x1b[2J\x1b[H')
+  clearScreen()
   output.write('+ Get Started\n')
   output.write('  Choose how you want to continue.\n\n')
   output.write('  Sign in\n')
@@ -206,6 +214,8 @@ async function guidedAdd(args: string[]): Promise<number> {
     return 0
   }
 
+  clearScreen()
+  console.log('+ Save Current Account\n')
   console.log('Saving currently active Kiro CLI login into the plugin pool first...')
   try {
     printResult(addCurrentKiroCliAccount())
@@ -219,27 +229,30 @@ async function guidedAdd(args: string[]): Promise<number> {
   const loginArgs = buildLoginArgsFromFlags(args, mode)
 
   if (!shouldSkipLogout(args)) {
-    if (!args.includes('--yes')) {
-      const answer = (
-        await askQuestion(
-          'This will log out the current Kiro CLI session after saving it. Continue? [y/N]: '
+    clearScreen()
+    console.log('+ Confirm Account Change\n')
+    const answer = args.includes('--yes')
+      ? 'yes'
+      : (
+          await askQuestion(
+            'This will log out the current Kiro CLI session after saving it. Continue? [y/N]: '
+          )
         )
-      )
-        .trim()
-        .toLowerCase()
-      if (answer !== 'y' && answer !== 'yes') return 1
-    }
+          .trim()
+          .toLowerCase()
+    if (answer !== 'y' && answer !== 'yes') return 1
 
-    console.log(
-      '\nLogging out of the current Kiro CLI session so the next login can use another account...'
-    )
+    clearScreen()
+    console.log('+ Logout Current Kiro CLI Session\n')
+    console.log('Logging out so the next login can use another account...')
     const logout = runKiroCli(['logout'], { stdio: 'inherit' })
     if (logout.error) throw logout.error
   }
 
-  console.log(`\nLaunching: kiro-cli ${loginArgs.join(' ')}`)
+  clearScreen()
+  console.log('+ Kiro Sign In\n')
+  console.log(`Launching: kiro-cli ${loginArgs.join(' ')}`)
   if (mode === 'manual') {
-    console.log('Manual / Incognito selected. Copying the manual sign-in link automatically...')
     const code = await runManualLogin(loginArgs)
     if (code !== 0) return code
   } else {
@@ -248,43 +261,108 @@ async function guidedAdd(args: string[]): Promise<number> {
     if (typeof login.status === 'number' && login.status !== 0) return login.status
   }
 
-  console.log('\nImporting the newly active Kiro CLI login into the plugin pool...')
+  clearScreen()
+  console.log('+ Import New Kiro Account\n')
   printResult(addCurrentKiroCliAccount())
   return 0
+}
+
+function makeManualDeviceUrl(code: string): string {
+  return `https://app.kiro.dev/account/device?user_code=${encodeURIComponent(code)}&login_provider=Google`
+}
+
+function renderManualLoginScreen(state: {
+  command: string
+  url?: string
+  code?: string
+  copied: 'none' | 'url' | 'code'
+  status: string
+  lastOutput: string[]
+}): void {
+  clearScreen()
+  console.log('+ Manual / Incognito Sign In\n')
+  console.log(`Launching: ${state.command}`)
+  console.log('Browser auto-open is suppressed by the manager as much as Kiro CLI allows.')
+  console.log('')
+  if (state.url) console.log(`Go to: ${state.url}`)
+  if (state.code) console.log(`Code: ${state.code}`)
+  if (state.copied === 'url') console.log('Copied login link to clipboard.')
+  else if (state.copied === 'code') console.log('Copied login code to clipboard.')
+  else console.log('Waiting for Kiro CLI to print the login URL/code...')
+  console.log('')
+  console.log(state.status)
+  if (state.lastOutput.length) {
+    console.log('\nKiro output:')
+    for (const line of state.lastOutput.slice(-5)) console.log(`  ${line}`)
+  }
+}
+
+function manualLoginSpawnOptions(): SpawnOptions {
+  const env = {
+    ...process.env,
+    BROWSER: platform() === 'win32' ? 'cmd /c exit 0' : 'true',
+    KIRO_DISABLE_BROWSER: '1',
+    NO_BROWSER: '1'
+  }
+  return { stdio: ['inherit', 'pipe', 'pipe'], env }
 }
 
 function runManualLogin(loginArgs: string[]): Promise<number> {
   const command = platform() === 'win32' ? 'cmd.exe' : 'kiro-cli'
   const args =
     platform() === 'win32' ? ['/d', '/s', '/c', ['kiro-cli', ...loginArgs].join(' ')] : loginArgs
-  const child = spawn(command, args, { stdio: ['inherit', 'pipe', 'pipe'] })
-  let copiedUrl: string | undefined
-  let copiedCode: string | undefined
+  const child = spawn(command, args, manualLoginSpawnOptions())
+  const state: {
+    command: string
+    url?: string
+    code?: string
+    copied: 'none' | 'url' | 'code'
+    status: string
+    lastOutput: string[]
+  } = {
+    command: ['kiro-cli', ...loginArgs].join(' '),
+    copied: 'none',
+    status: 'Waiting for authorization...',
+    lastOutput: []
+  }
   let buffer = ''
+  renderManualLoginScreen(state)
 
   function inspect(chunk: Buffer): void {
-    const text = chunk.toString('utf8')
+    const text = stripAnsi(chunk.toString('utf8'))
     buffer = (buffer + text).slice(-4096)
-    process.stdout.write(text)
+    state.lastOutput = buffer
+      .split(/\r?\n|\r/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(-8)
+
     const url = buffer.match(new RegExp('https://app\\.kiro\\.dev/account/device\\?[^\\s]+'))?.[0]
-    if (url && url !== copiedUrl) {
-      copiedUrl = url
-      copyToClipboard(url)
-      console.log('\nLogin link copied to clipboard.')
-    }
     const code = buffer.match(/(?:confirm the code:|code:)\s*([A-Z0-9-]+)/i)?.[1]
-    if (!copiedUrl && code && code !== copiedCode) {
-      copiedCode = code
-      copyToClipboard(code)
-      console.log('\nLogin code copied to clipboard.')
+    if (url) state.url = url
+    if (code) state.code = code
+    if (!state.url && state.code) state.url = makeManualDeviceUrl(state.code)
+
+    if (state.url && state.copied !== 'url') {
+      copyToClipboard(state.url)
+      state.copied = 'url'
+    } else if (state.code && state.copied === 'none') {
+      copyToClipboard(state.code)
+      state.copied = 'code'
     }
+    renderManualLoginScreen(state)
   }
 
-  child.stdout.on('data', inspect)
-  child.stderr.on('data', (chunk: Buffer) => process.stderr.write(chunk))
+  child.stdout?.on('data', inspect)
+  child.stderr?.on('data', inspect)
   return new Promise((resolve, reject) => {
     child.on('error', reject)
-    child.on('close', (code) => resolve(code ?? 0))
+    child.on('close', (code) => {
+      state.status =
+        code === 0 ? 'Authorization complete.' : `Kiro login exited with code ${code ?? 0}.`
+      renderManualLoginScreen(state)
+      resolve(code ?? 0)
+    })
   })
 }
 
