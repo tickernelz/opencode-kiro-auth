@@ -5,6 +5,10 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "opencode-kiro-auth": "dist/cli.js",
+    "kiro-auth": "dist/cli.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/fix-esm-imports.mjs",
     "format": "prettier --write 'src/**/*.ts'",

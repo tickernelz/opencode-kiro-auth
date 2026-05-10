@@ -25,6 +25,7 @@ export class AccountRepository {
       accessToken: r.access_token,
       expiresAt: r.expires_at,
       rateLimitResetTime: r.rate_limit_reset,
+      enabled: r.enabled !== 0,
       isHealthy: r.is_healthy === 1,
       unhealthyReason: r.unhealthy_reason,
       recoveryTime: r.recovery_time,
@@ -61,7 +62,7 @@ export class AccountRepository {
 
   async findHealthyAccounts(): Promise<any[]> {
     const all = await this.findAll()
-    return all.filter((a) => a.isHealthy)
+    return all.filter((a) => a.enabled !== false && a.isHealthy)
   }
 
   async batchSave(accounts: any[]): Promise<void> {

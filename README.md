@@ -175,6 +175,54 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
      `idc_start_url` and `idc_region`.
 3. Configuration will be automatically managed at `~/.config/opencode/kiro.db`.
 
+## Account Manager
+
+The plugin also ships a small local account manager for the same SQLite pool used by
+runtime rotation. This makes the Kiro account pool visible and operable without
+manually editing `kiro.db`.
+
+```bash
+# Show saved Kiro accounts and their health/usage state
+opencode-kiro-auth accounts list
+
+# Import the currently active kiro-cli login into the plugin pool
+opencode-kiro-auth accounts add
+
+# Switch the active kiro-cli token to a saved account
+opencode-kiro-auth accounts switch 2
+
+# Temporarily exclude/include accounts from rotation
+opencode-kiro-auth accounts disable 1
+opencode-kiro-auth accounts enable 1
+
+# Clear local health/rate-limit state for an account
+opencode-kiro-auth accounts reset 1
+
+# Remove an account from the plugin pool
+opencode-kiro-auth accounts remove 1
+```
+
+Short aliases are also available through the `kiro-auth` binary:
+
+```bash
+kiro-auth list
+kiro-auth add
+kiro-auth switch 2
+```
+
+To add another account to the pool, log in with Kiro CLI first, then sync:
+
+```bash
+kiro-cli logout
+kiro-cli login
+kiro-auth add
+kiro-auth list
+```
+
+`disable` only affects this plugin's selector. It does not log out of Kiro CLI or
+delete credentials. `switch` writes the selected saved account back to the Kiro CLI
+token store so follow-up Kiro CLI and plugin requests use the selected account.
+
 ## Local plugin development
 
 OpenCode installs plugins into a cache directory (typically
