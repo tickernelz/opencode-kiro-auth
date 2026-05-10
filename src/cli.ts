@@ -4,8 +4,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir, platform } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { basename, dirname, join } from 'node:path'
 
 type SqliteDatabase = {
   exec(sql: string): void
@@ -519,7 +518,7 @@ export function runCli(argv: string[] = process.argv.slice(2)): CommandResult {
   }
 }
 
-if (process.argv[1] && resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1])) {
+if (process.argv[1] && basename(process.argv[1]) === 'cli.js') {
   try {
     const result = runCli()
     for (const line of result.lines) console.log(line)
