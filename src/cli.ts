@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { render } from 'ink'
+import { spawn, spawnSync } from 'node:child_process'
+import { platform } from 'node:os'
 import { basename } from 'node:path'
 import { stdin as input, stdout as output } from 'node:process'
 import { createInterface, emitKeypressEvents } from 'node:readline'
@@ -182,6 +184,22 @@ function printResult(result: CommandResult): void {
   for (const line of result.lines) console.log(line)
 }
 
+function copyToClipboard(value: string): void {
+  try {
+    if (platform() === 'win32') {
+      spawnSync('clip.exe', { input: value, encoding: 'utf8' })
+      return
+    }
+    if (platform() === 'darwin') {
+      spawnSync('pbcopy', { input: value, encoding: 'utf8' })
+      return
+    }
+    spawnSync('xclip', ['-selection', 'clipboard'], { input: value, encoding: 'utf8' })
+  } catch {
+    // Clipboard copy is best effort; the link remains printed by Kiro CLI.
+  }
+}
+
 async function guidedAdd(args: string[]): Promise<number> {
   if (args.includes('--sync-only')) {
     printResult(addCurrentKiroCliAccount())
@@ -221,17 +239,53 @@ async function guidedAdd(args: string[]): Promise<number> {
 
   console.log(`\nLaunching: kiro-cli ${loginArgs.join(' ')}`)
   if (mode === 'manual') {
-    console.log(
-      'Manual / Incognito selected. Kiro CLI will print/copy the manual sign-in link if required.'
-    )
+    console.log('Manual / Incognito selected. Copying the manual sign-in link automatically...')
+    const code = await runManualLogin(loginArgs)
+    if (code !== 0) return code
+  } else {
+    const login = runKiroCli(loginArgs, { stdio: 'inherit' })
+    if (login.error) throw login.error
+    if (typeof login.status === 'number' && login.status !== 0) return login.status
   }
-  const login = runKiroCli(loginArgs, { stdio: 'inherit' })
-  if (login.error) throw login.error
-  if (typeof login.status === 'number' && login.status !== 0) return login.status
 
   console.log('\nImporting the newly active Kiro CLI login into the plugin pool...')
   printResult(addCurrentKiroCliAccount())
   return 0
+}
+
+function runManualLogin(loginArgs: string[]): Promise<number> {
+  const command = platform() === 'win32' ? 'cmd.exe' : 'kiro-cli'
+  const args =
+    platform() === 'win32' ? ['/d', '/s', '/c', ['kiro-cli', ...loginArgs].join(' ')] : loginArgs
+  const child = spawn(command, args, { stdio: ['inherit', 'pipe', 'pipe'] })
+  let copiedUrl: string | undefined
+  let copiedCode: string | undefined
+  let buffer = ''
+
+  function inspect(chunk: Buffer): void {
+    const text = chunk.toString('utf8')
+    buffer = (buffer + text).slice(-4096)
+    process.stdout.write(text)
+    const url = buffer.match(new RegExp('https://app\\.kiro\\.dev/account/device\\?[^\\s]+'))?.[0]
+    if (url && url !== copiedUrl) {
+      copiedUrl = url
+      copyToClipboard(url)
+      console.log('\nLogin link copied to clipboard.')
+    }
+    const code = buffer.match(/(?:confirm the code:|code:)\s*([A-Z0-9-]+)/i)?.[1]
+    if (!copiedUrl && code && code !== copiedCode) {
+      copiedCode = code
+      copyToClipboard(code)
+      console.log('\nLogin code copied to clipboard.')
+    }
+  }
+
+  child.stdout.on('data', inspect)
+  child.stderr.on('data', (chunk: Buffer) => process.stderr.write(chunk))
+  return new Promise((resolve, reject) => {
+    child.on('error', reject)
+    child.on('close', (code) => resolve(code ?? 0))
+  })
 }
 
 async function runTui(): Promise<'quit' | 'add'> {
