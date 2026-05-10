@@ -253,8 +253,11 @@ async function guidedAdd(args: string[]): Promise<number> {
   console.log('+ Kiro Sign In\n')
   console.log(`Launching: kiro-cli ${loginArgs.join(' ')}`)
   if (mode === 'manual') {
-    const code = await runManualLogin(loginArgs)
-    if (code !== 0) return code
+    await runManualLogin(loginArgs)
+    console.log(
+      '\nManual link/code copied. Complete sign-in in your browser, then run `kiro-auth sync`.'
+    )
+    return 0
   } else {
     const login = runKiroCli(loginArgs, { stdio: 'inherit' })
     if (login.error) throw login.error
@@ -307,7 +310,7 @@ function manualLoginSpawnOptions(): SpawnOptions {
   return { stdio: ['inherit', 'pipe', 'pipe'], env }
 }
 
-function runManualLogin(loginArgs: string[]): Promise<number> {
+function runManualLogin(loginArgs: string[]): Promise<void> {
   const command = platform() === 'win32' ? 'cmd.exe' : 'kiro-cli'
   const args =
     platform() === 'win32' ? ['/d', '/s', '/c', ['kiro-cli', ...loginArgs].join(' ')] : loginArgs
@@ -328,6 +331,7 @@ function runManualLogin(loginArgs: string[]): Promise<number> {
   let buffer = ''
   renderManualLoginScreen(state)
 
+  let finishManualCopy: (() => void) | undefined
   function inspect(chunk: Buffer): void {
     const text = stripAnsi(chunk.toString('utf8'))
     buffer = (buffer + text).slice(-4096)
@@ -351,18 +355,24 @@ function runManualLogin(loginArgs: string[]): Promise<number> {
       state.copied = 'code'
     }
     renderManualLoginScreen(state)
+    if (state.url || state.code) finishManualCopy?.()
   }
 
   child.stdout?.on('data', inspect)
   child.stderr?.on('data', inspect)
   return new Promise((resolve, reject) => {
-    child.on('error', reject)
-    child.on('close', (code) => {
-      state.status =
-        code === 0 ? 'Authorization complete.' : `Kiro login exited with code ${code ?? 0}.`
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      state.status = 'Manual URL/code copied. Kiro CLI poller stopped to prevent browser auto-open.'
       renderManualLoginScreen(state)
-      resolve(code ?? 0)
-    })
+      child.kill()
+      resolve()
+    }
+    finishManualCopy = finish
+    child.on('error', reject)
+    child.on('close', () => finish())
   })
 }
 
