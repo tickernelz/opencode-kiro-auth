@@ -200,8 +200,11 @@ manually editing `kiro.db`.
 # Show saved Kiro accounts and their health/usage state
 opencode-kiro-auth accounts list
 
-# Import the currently active kiro-cli login into the plugin pool
+# Start the guided flow for adding another Kiro account
 opencode-kiro-auth accounts add
+
+# Only import the currently active kiro-cli login into the plugin pool
+opencode-kiro-auth accounts sync
 
 # Switch the active kiro-cli token to a saved account
 opencode-kiro-auth accounts switch 2
@@ -221,9 +224,12 @@ Short aliases are also available through the `kiro-auth` binary:
 
 ```bash
 kiro-auth list
+kiro-auth sync
 kiro-auth add
 kiro-auth switch 2
 ```
+
+`kiro-auth add` is a guided flow: it saves the active Kiro CLI login, asks for confirmation, logs out the single active Kiro CLI session, launches `kiro-cli login`, and imports the new login when Kiro finishes. Use `kiro-auth sync` when you only want to import the currently active Kiro CLI session without logging out.
 
 Launch the interactive Ink TUI with the short command:
 
@@ -237,7 +243,8 @@ TUI shortcuts:
 
 - `up/down` or `j/k`: move selection
 - `enter`: open the action menu
-- `a`: add/sync the current `kiro-cli` login into the pool
+- `a`: leave the TUI and launch the guided add-account login flow
+- `y`: sync/import the currently active `kiro-cli` login
 - `s`: switch Kiro CLI to the selected account
 - `e`: enable/disable the selected account
 - `r`: reset local health/rate-limit state
@@ -246,12 +253,12 @@ TUI shortcuts:
 - `?`: help
 - `q`: quit
 
-To add another account to the pool, log in with Kiro CLI first, then sync:
+Manual alternative: to add another account to the pool yourself, log in with Kiro CLI first, then sync:
 
 ```bash
 kiro-cli logout
 kiro-cli login
-kiro-auth add
+kiro-auth sync
 kiro-auth list
 ```
 

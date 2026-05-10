@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { spawnSync, type SpawnSyncOptions } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -151,14 +151,62 @@ function createAccountId(
     .digest('hex')
 }
 
+export type LoginProvider = 'google' | 'github' | 'device' | 'idc'
+
+function quoteWindowsArg(value: string): string {
+  if (!/[\s&()^%!,;="']/.test(value)) return value
+  return `"${value.replace(/"/g, '\\"')}"`
+}
+
+export function runKiroCli(args: string[], options: SpawnSyncOptions = {}) {
+  if (platform() === 'win32') {
+    return spawnSync(
+      'cmd.exe',
+      ['/d', '/s', '/c', ['kiro-cli', ...args.map(quoteWindowsArg)].join(' ')],
+      options
+    )
+  }
+  return spawnSync('kiro-cli', args, options)
+}
+
+export function buildKiroLoginArgs(
+  provider: LoginProvider,
+  idc?: { startUrl?: string; region?: string }
+): string[] {
+  if (provider === 'google') return ['login', '--license', 'free', '--social', 'google']
+  if (provider === 'github') return ['login', '--license', 'free', '--social', 'github']
+  if (provider === 'device') return ['login', '--license', 'free', '--use-device-flow']
+  const args = ['login', '--license', 'pro']
+  if (idc?.startUrl) args.push('--identity-provider', idc.startUrl)
+  if (idc?.region) args.push('--region', idc.region)
+  return args
+}
+
 export function readKiroCliEmail(): string | undefined {
-  const result =
-    platform() === 'win32'
-      ? spawnSync('cmd.exe', ['/d', '/s', '/c', 'kiro-cli whoami'], { encoding: 'utf8' })
-      : spawnSync('kiro-cli', ['whoami'], { encoding: 'utf8' })
+  const result = runKiroCli(['whoami'], { encoding: 'utf8' })
   const output = `${result.stdout || ''}\n${result.stderr || ''}`
   const match = output.match(/Email:\s*([^\s]+)/)
-  return match?.[1]
+  if (match?.[1]) return match[1]
+
+  try {
+    const cliDbPath = getKiroCliDbPath()
+    const pluginDbPath = getPluginDbPath()
+    if (!existsSync(cliDbPath) || !existsSync(pluginDbPath)) return undefined
+    const cliDb = openDatabase(cliDbPath)
+    try {
+      const row = cliDb
+        .prepare("SELECT value FROM auth_kv WHERE key LIKE '%:token' ORDER BY key LIMIT 1")
+        .get() as { value?: string } | undefined
+      const token = safeJsonParse(row?.value)
+      const refreshToken = token?.refresh_token || token?.refreshToken
+      if (typeof refreshToken !== 'string' || !refreshToken) return undefined
+      return readAccounts().find((account) => account.refresh_token === refreshToken)?.email
+    } finally {
+      cliDb.close()
+    }
+  } catch {
+    return undefined
+  }
 }
 
 function initPluginDb(db: SqliteDatabase): void {
@@ -339,6 +387,17 @@ export function addCurrentKiroCliAccount(): CommandResult {
     }>
     const registration = rows.find((row) => row.key.includes('device-registration'))
     const creds = findClientCredsRecursive(safeJsonParse(registration?.value))
+    let activeProfileArn: string | undefined
+    try {
+      const stateRow = cliDb
+        .prepare('SELECT value FROM state WHERE key = ?')
+        .get('api.codewhisperer.profile') as { value?: string } | undefined
+      const profile = safeJsonParse(stateRow?.value)
+      const arn = profile?.arn || profile?.profileArn || profile?.profile_arn
+      if (typeof arn === 'string' && arn.trim()) activeProfileArn = arn.trim()
+    } catch {
+      // Kiro CLI can work without a state table for Builder ID accounts.
+    }
     const cliEmail = readKiroCliEmail()
     let imported = 0
 
@@ -349,14 +408,24 @@ export function addCurrentKiroCliAccount(): CommandResult {
       const isIdc = row.key.includes('odic')
       const authMethod = isIdc ? 'idc' : 'desktop'
       const region = String(data.region || 'us-east-1')
-      const profileArn = typeof data.profile_arn === 'string' ? data.profile_arn : undefined
+      let profileArn = typeof data.profile_arn === 'string' ? data.profile_arn : undefined
+      if (!profileArn && typeof data.profileArn === 'string') profileArn = data.profileArn
+      if (!profileArn && isIdc) profileArn = activeProfileArn
       const refreshToken = String(data.refresh_token || data.refreshToken || '')
       if (!refreshToken) continue
       const accessToken = String(data.access_token || data.accessToken || '')
-      const clientId = String(data.client_id || data.clientId || creds.clientId || '')
-      const clientSecret = String(
-        data.client_secret || data.clientSecret || creds.clientSecret || ''
+      const clientId = String(
+        data.client_id || data.clientId || (isIdc ? creds.clientId : '') || ''
       )
+      const clientSecret = String(
+        data.client_secret || data.clientSecret || (isIdc ? creds.clientSecret : '') || ''
+      )
+      if (isIdc && (!clientId || !clientSecret)) continue
+      if (!cliEmail && authMethod === 'desktop') {
+        throw new Error(
+          'Kiro CLI login is active, but `kiro-cli whoami` did not return an email. Refusing to import a desktop account without a real email.'
+        )
+      }
       const email = cliEmail || makePlaceholderEmail(authMethod, region, clientId, profileArn)
       const id = createAccountId(email, authMethod, clientId, profileArn)
       upsertAccount({
@@ -382,6 +451,11 @@ export function addCurrentKiroCliAccount(): CommandResult {
       })
       imported += 1
     }
+    if (imported === 0) {
+      throw new Error(
+        'No Kiro CLI token rows were found. Run `kiro-auth add` in a terminal and complete Kiro login first.'
+      )
+    }
     const accounts = readAccounts()
     return {
       exitCode: 0,
@@ -406,12 +480,32 @@ export function writeAccountToKiroCli(account: AccountRow): void {
     }>
     const targetKey = account.auth_method === 'idc' ? 'kirocli:odic:token' : 'kirocli:social:token'
     const row = rows.find((item) => item.key === targetKey || item.key.endsWith(targetKey))
-    if (!row) throw new Error(`Kiro CLI token row not found for ${account.auth_method}`)
-    const data = safeJsonParse(row.value) || {}
+    const data = row ? safeJsonParse(row.value) || {} : {}
     data.access_token = account.access_token
     data.refresh_token = account.refresh_token
     data.expires_at = new Date(account.expires_at).toISOString()
-    cliDb.prepare('UPDATE auth_kv SET value = ? WHERE key = ?').run(JSON.stringify(data), row.key)
+    data.region = account.oidc_region || account.region
+    if (account.start_url) data.start_url = account.start_url
+    if (account.profile_arn) data.profile_arn = account.profile_arn
+    if (account.client_id) data.client_id = account.client_id
+    if (account.client_secret) data.client_secret = account.client_secret
+    if (row) {
+      cliDb.prepare('UPDATE auth_kv SET value = ? WHERE key = ?').run(JSON.stringify(data), row.key)
+    } else {
+      cliDb
+        .prepare('INSERT INTO auth_kv (key, value) VALUES (?, ?)')
+        .run(targetKey, JSON.stringify(data))
+    }
+    if (account.profile_arn) {
+      try {
+        const profile = JSON.stringify({ arn: account.profile_arn })
+        cliDb
+          .prepare('INSERT OR REPLACE INTO state (key, value) VALUES (?, ?)')
+          .run('api.codewhisperer.profile', profile)
+      } catch {
+        // Older Kiro CLI databases may not have a state table. Token restore still works.
+      }
+    }
   } finally {
     cliDb.close()
   }

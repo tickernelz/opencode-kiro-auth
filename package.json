@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node scripts/fix-esm-imports.mjs",
-    "format": "prettier --write 'src/**/*.{ts,tsx}'",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "prepare": "husky"

@@ -19,17 +19,27 @@ import {
 
 type Mode = 'main' | 'actions' | 'confirm-remove' | 'help'
 
-type Action = {
-  label: string
-  run: (index: number) => CommandResult
-}
+type Action =
+  | { label: string; kind: 'guided-add' }
+  | { label: string; kind: 'sync'; run: () => CommandResult }
+  | { label: string; kind: 'account'; run: (index: number) => CommandResult }
 
 const actions: Action[] = [
-  { label: 'Switch account', run: (index) => switchAccount(String(index + 1)) },
-  { label: 'Enable account', run: (index) => enableAccount(String(index + 1), true) },
-  { label: 'Disable account', run: (index) => enableAccount(String(index + 1), false) },
-  { label: 'Reset health', run: (index) => resetAccount(String(index + 1)) },
-  { label: 'Remove account', run: (index) => removeAccount(String(index + 1)) }
+  { label: 'Guided add account', kind: 'guided-add' },
+  { label: 'Sync current Kiro login', kind: 'sync', run: addCurrentKiroCliAccount },
+  { label: 'Switch account', kind: 'account', run: (index) => switchAccount(String(index + 1)) },
+  {
+    label: 'Enable account',
+    kind: 'account',
+    run: (index) => enableAccount(String(index + 1), true)
+  },
+  {
+    label: 'Disable account',
+    kind: 'account',
+    run: (index) => enableAccount(String(index + 1), false)
+  },
+  { label: 'Reset health', kind: 'account', run: (index) => resetAccount(String(index + 1)) },
+  { label: 'Remove account', kind: 'account', run: (index) => removeAccount(String(index + 1)) }
 ]
 
 function usage(account: AccountRow): string {
@@ -87,7 +97,7 @@ function ResultPane(props: { result: string[]; error: string | null }): React.Re
   )
 }
 
-export function KiroAuthTui(): React.ReactElement {
+export function KiroAuthTui(props: { onRequestGuidedAdd?: () => void } = {}): React.ReactElement {
   const { exit } = useApp()
   const { stdout } = useStdout()
   const terminalWidth = stdout.columns || 100
@@ -121,10 +131,25 @@ export function KiroAuthTui(): React.ReactElement {
     }
   }
 
-  function runSelected(action: Action): void {
+  function runAction(action: Action): void {
+    if (action.kind === 'guided-add') {
+      props.onRequestGuidedAdd?.()
+      return
+    }
+    if (action.kind === 'sync') {
+      runSafely(action.run)
+      setMode('main')
+      return
+    }
     if (!canSelect) return
     runSafely(() => action.run(selected))
     setMode('main')
+  }
+
+  function runAccountAction(actionIndex: number): void {
+    const action = actions[actionIndex]
+    if (!action) return
+    runAction(action)
   }
 
   useEffect(() => {
@@ -149,7 +174,7 @@ export function KiroAuthTui(): React.ReactElement {
     }
     if (mode === 'confirm-remove') {
       if (input === 'y' && canSelect) {
-        runSelected(actions[4]!)
+        runAccountAction(6)
         return
       }
       if (input === 'n' || key.escape) setMode('main')
@@ -162,8 +187,8 @@ export function KiroAuthTui(): React.ReactElement {
         setActionIndex((value) => clamp(value + 1, 0, actions.length - 1))
       else if (key.escape) setMode('main')
       else if (key.return) {
-        if (actionIndex === 4) setMode('confirm-remove')
-        else runSelected(actions[actionIndex]!)
+        if (actionIndex === 6) setMode('confirm-remove')
+        else runAccountAction(actionIndex)
       }
       return
     }
@@ -172,11 +197,11 @@ export function KiroAuthTui(): React.ReactElement {
     else if (key.downArrow || input === 'j')
       setSelected((value) => clamp(value + 1, 0, Math.max(0, accounts.length - 1)))
     else if (key.return) setMode('actions')
-    else if (input === 'a') runSafely(addCurrentKiroCliAccount)
-    else if (input === 's' && canSelect) runSelected(actions[0]!)
-    else if (input === 'e' && canSelect)
-      runSelected((account?.enabled === 0 ? actions[1] : actions[2])!)
-    else if (input === 'r' && canSelect) runSelected(actions[3]!)
+    else if (input === 'a') runAccountAction(0)
+    else if (input === 'y') runAccountAction(1)
+    else if (input === 's' && canSelect) runAccountAction(2)
+    else if (input === 'e' && canSelect) runAccountAction(account?.enabled === 0 ? 3 : 4)
+    else if (input === 'r' && canSelect) runAccountAction(5)
     else if (input === 'x' && canSelect) setMode('confirm-remove')
   })
 
@@ -206,7 +231,7 @@ export function KiroAuthTui(): React.ReactElement {
         <Text bold>Accounts</Text>
         <Text color="gray"># email status usage region reset</Text>
         {accounts.length === 0 ? (
-          <Text color="yellow">No accounts. Press a to sync current kiro-cli login.</Text>
+          <Text color="yellow">No accounts. Press a to launch guided Kiro login.</Text>
         ) : (
           accounts.map((item, index) => (
             <AccountRowView
@@ -271,7 +296,7 @@ export function KiroAuthTui(): React.ReactElement {
         >
           <Text bold>Help</Text>
           <Text>
-            arrows/j/k move | enter action menu | a add/sync | s switch | e enable/disable
+            arrows/j/k move | enter action menu | a guided add | y sync | s switch | e toggle
           </Text>
           <Text>r reset | x remove | f refresh | ? help | q quit</Text>
         </Box>
@@ -279,8 +304,8 @@ export function KiroAuthTui(): React.ReactElement {
 
       <Box marginTop={1}>
         <Text color="gray">
-          arrows/j/k move | enter actions | a add | s switch | e toggle | r reset | x remove | f
-          refresh | ? help | q quit
+          arrows/j/k move | enter actions | a add | y sync | s switch | e toggle | r reset | x
+          remove | f refresh | ? help | q quit
         </Text>
       </Box>
     </Box>
