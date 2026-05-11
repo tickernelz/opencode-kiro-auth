@@ -36,18 +36,15 @@ export class AccountSelector {
       throw new Error('No accounts')
     }
 
-    let acc = this.accountManager.getCurrentOrNext()
+    const acc = this.accountManager.getCurrentOrNext()
 
     if (!acc) {
-      this.circuitBreakerTrips++
       const wait = this.accountManager.getMinWaitTime()
-      if (wait > 0 && wait < 30000) {
-        if (this.accountManager.shouldShowToast()) {
-          showToast(`All accounts rate-limited. Waiting ${Math.ceil(wait / 1000)}s...`, 'warning')
-        }
-        await this.sleep(wait)
-        return null
+      if (wait > 0) {
+        this.resetCircuitBreaker()
+        throw new Error(`All accounts rate-limited. Retry after ${Math.ceil(wait / 1000)}s`)
       }
+      this.circuitBreakerTrips++
       throw new Error('All accounts are unhealthy or rate-limited: reauth required')
     }
 
@@ -95,9 +92,5 @@ export class AccountSelector {
       this.circuitBreakerTrips = 0
       this.lastCircuitBreakerReset = Date.now()
     }
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((r) => setTimeout(r, ms))
   }
 }

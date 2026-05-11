@@ -70,6 +70,16 @@ export class TokenRefresher {
       return { account: stillAcc, shouldContinue: true }
     }
 
+    if (error instanceof KiroTokenRefreshError && error.code === 'HTTP_429') {
+      this.accountManager.markRateLimited(account, 60000)
+      await this.repository.batchSave(this.accountManager.getAccounts())
+      if (this.accountManager.getUsableAccountCount() === 0) {
+        throw new Error('All Kiro accounts are rate-limited. Retry after 60s.')
+      }
+      showToast('Token refresh rate-limited. Switching account.', 'warning')
+      return { account, shouldContinue: true }
+    }
+
     if (
       error instanceof KiroTokenRefreshError &&
       (error.code === 'ExpiredTokenException' ||
