@@ -14,7 +14,8 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "prepare": "husky"
+    "prepare": "husky",
+    "smoke:pack": "npm run build && node scripts/package-smoke.mjs"
   },
   "keywords": [
     "opencode",

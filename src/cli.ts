@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { spawn, spawnSync, type SpawnOptions } from 'node:child_process'
+import { realpathSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { platform } from 'node:os'
-import { basename } from 'node:path'
 import { stdin as input, stdout as output } from 'node:process'
 import { emitKeypressEvents } from 'node:readline'
+import { fileURLToPath } from 'node:url'
 import {
   addCurrentKiroCliAccount,
   enableAccount,
@@ -564,7 +565,16 @@ async function runTui(): Promise<'quit' | 'add'> {
   return runKiroAuthTui()
 }
 
-if (process.argv[1] && basename(process.argv[1]) === 'cli.js') {
+function isExecutedEntrypoint(): boolean {
+  if (!process.argv[1]) return false
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return process.argv[1] === fileURLToPath(import.meta.url)
+  }
+}
+
+if (isExecutedEntrypoint()) {
   try {
     const args = process.argv.slice(2)
     const normalized = args[0] === 'accounts' ? args.slice(1) : args
