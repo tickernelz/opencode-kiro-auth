@@ -84,13 +84,15 @@ export class ErrorHandler {
       const w = parseInt(response.headers.get('retry-after') || '60') * 1000
       this.accountManager.markRateLimited(account, w)
       await this.repository.batchSave(this.accountManager.getAccounts())
-      const count = this.accountManager.getAccountCount()
-      if (count > 1) {
+      const usableCount = this.accountManager.getUsableAccountCount()
+      if (usableCount > 0) {
+        showToast(
+          `429: ${account.email || 'account'} rate-limited. Switching account...`,
+          'warning'
+        )
         return { shouldRetry: true, switchAccount: true }
       }
-      showToast(`429: Rate limited. Waiting ${Math.ceil(w / 1000)}s...`, 'warning')
-      await this.sleep(w)
-      return { shouldRetry: true }
+      throw new Error(`All Kiro accounts are rate-limited. Retry after ${Math.ceil(w / 1000)}s.`)
     }
 
     if (response.status === 402 || response.status === 403) {

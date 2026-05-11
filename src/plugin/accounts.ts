@@ -77,16 +77,26 @@ export class AccountManager {
   }
   getMinWaitTime(): number {
     const now = Date.now()
-    const waits = this.accounts.map((a) => (a.rateLimitResetTime || 0) - now).filter((t) => t > 0)
+    const waits = this.accounts
+      .filter((a) => !isPermanentError(a.unhealthyReason))
+      .map((a) => (a.rateLimitResetTime || 0) - now)
+      .filter((t) => t > 0)
     return waits.length > 0 ? Math.min(...waits) : 0
+  }
+  getUsableAccountCount(): number {
+    const now = Date.now()
+    return this.accounts.filter(
+      (a) =>
+        a.isHealthy &&
+        !isPermanentError(a.unhealthyReason) &&
+        !(a.rateLimitResetTime && now < a.rateLimitResetTime)
+    ).length
   }
   getCurrentOrNext(): ManagedAccount | null {
     const now = Date.now()
     const available = this.accounts.filter((a) => {
+      if (isPermanentError(a.unhealthyReason)) return false
       if (!a.isHealthy) {
-        if (isPermanentError(a.unhealthyReason)) {
-          return false
-        }
         if (a.failCount < 10 && a.recoveryTime && now >= a.recoveryTime) {
           a.isHealthy = true
           delete a.unhealthyReason
@@ -112,7 +122,13 @@ export class AccountManager {
     }
     if (!selected) {
       const fallback = this.accounts
-        .filter((a) => !a.isHealthy && a.failCount < 10 && !isPermanentError(a.unhealthyReason))
+        .filter(
+          (a) =>
+            !a.isHealthy &&
+            a.failCount < 10 &&
+            a.unhealthyReason &&
+            !isPermanentError(a.unhealthyReason)
+        )
         .sort(
           (a, b) => (a.usedCount || 0) - (b.usedCount || 0) || (a.lastUsed || 0) - (b.lastUsed || 0)
         )[0]

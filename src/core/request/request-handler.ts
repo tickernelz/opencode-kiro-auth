@@ -69,6 +69,11 @@ export class RequestHandler {
     const retryContext = this.retryStrategy.createContext()
 
     while (true) {
+      const accountBlocker = this.getAccountBlocker()
+      if (accountBlocker) {
+        throw new Error(accountBlocker)
+      }
+
       const check = this.retryStrategy.shouldContinue(retryContext)
       if (!check.canContinue) {
         throw new Error(check.error)
@@ -93,6 +98,15 @@ export class RequestHandler {
       })
       if (!acc) {
         consecutiveNullAccounts++
+        if (consecutiveNullAccounts >= Math.min(3, this.config.max_request_iterations)) {
+          const wait = this.accountManager.getMinWaitTime()
+          if (wait > 0) {
+            throw new Error(
+              `All Kiro accounts are rate-limited. Retry after ${Math.ceil(wait / 1000)}s.`
+            )
+          }
+          throw new Error('No usable Kiro account available. Please re-authenticate.')
+        }
         const backoffDelay = Math.min(1000 * Math.pow(2, consecutiveNullAccounts - 1), 10000)
         await this.sleep(backoffDelay)
         continue
@@ -348,6 +362,32 @@ export class RequestHandler {
     return accounts.some(
       (acc) => acc.isHealthy && acc.expiresAt > now && !isPermanentError(acc.unhealthyReason)
     )
+  }
+
+  private getAccountBlocker(): string | null {
+    const accounts = this.accountManager.getAccounts()
+    if (accounts.length === 0) return null
+
+    const allPermanent = accounts.every((acc) => isPermanentError(acc.unhealthyReason))
+    if (allPermanent) {
+      return 'All Kiro accounts need re-authentication.'
+    }
+
+    const now = Date.now()
+    const usable = accounts.some(
+      (acc) =>
+        acc.isHealthy &&
+        !isPermanentError(acc.unhealthyReason) &&
+        !(acc.rateLimitResetTime && now < acc.rateLimitResetTime)
+    )
+    if (usable) return null
+
+    const wait = this.accountManager.getMinWaitTime()
+    if (wait > 0) {
+      return `All Kiro accounts are rate-limited. Retry after ${Math.ceil(wait / 1000)}s.`
+    }
+
+    return null
   }
 
   private allAccountsPermanentlyUnhealthy(): boolean {
