@@ -39,6 +39,7 @@ export interface ManagedAccount {
   accessToken: string
   expiresAt: number
   rateLimitResetTime: number
+  enabled?: boolean
   isHealthy: boolean
   unhealthyReason?: string
   recoveryTime?: number

@@ -39,16 +39,21 @@ export class AccountSelector {
     let acc = this.accountManager.getCurrentOrNext()
 
     if (!acc) {
-      this.circuitBreakerTrips++
       const wait = this.accountManager.getMinWaitTime()
-      if (wait > 0 && wait < 30000) {
-        if (this.accountManager.shouldShowToast()) {
-          showToast(`All accounts rate-limited. Waiting ${Math.ceil(wait / 1000)}s...`, 'warning')
+      if (wait > 0) {
+        if (wait < 30000) {
+          if (this.accountManager.shouldShowToast()) {
+            showToast(`All accounts rate-limited. Waiting ${Math.ceil(wait / 1000)}s...`, 'warning')
+          }
+          await this.sleep(wait)
+          this.resetCircuitBreaker()
+          return null
         }
-        await this.sleep(wait)
-        return null
+        this.resetCircuitBreaker()
+        throw new Error(`All accounts rate-limited. Retry after ${Math.ceil(wait / 1000)}s`)
       }
-      throw new Error('All accounts are unhealthy or rate-limited: reauth required')
+      this.circuitBreakerTrips++
+      throw new Error('All accounts are unhealthy: reauth required')
     }
 
     this.resetCircuitBreaker()

@@ -9,6 +9,7 @@
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,
     "outDir": "dist",
-    "declaration": true
+    "declaration": true,
+    "jsx": "react-jsx"
   }
 }

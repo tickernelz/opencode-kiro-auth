@@ -135,11 +135,26 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
           }
         },
         "auto": { "name": "Auto (1.0x)" },
-        "claude-sonnet-4": { "name": "Claude Sonnet 4.0 (1.3x)", "limit": { "context": 200000, "output": 64000 } },
-        "deepseek-3.2": { "name": "DeepSeek 3.2 (0.25x)", "limit": { "context": 128000, "output": 64000 } },
-        "minimax-m2.5": { "name": "MiniMax 2.5 (0.25x)", "limit": { "context": 200000, "output": 64000 } },
-        "minimax-m2.1": { "name": "MiniMax 2.1 (0.15x)", "limit": { "context": 200000, "output": 64000 } },
-        "qwen3-coder-next": { "name": "Qwen3 Coder Next (0.05x)", "limit": { "context": 256000, "output": 64000 } }
+        "claude-sonnet-4": {
+          "name": "Claude Sonnet 4.0 (1.3x)",
+          "limit": { "context": 200000, "output": 64000 }
+        },
+        "deepseek-3.2": {
+          "name": "DeepSeek 3.2 (0.25x)",
+          "limit": { "context": 128000, "output": 64000 }
+        },
+        "minimax-m2.5": {
+          "name": "MiniMax 2.5 (0.25x)",
+          "limit": { "context": 200000, "output": 64000 }
+        },
+        "minimax-m2.1": {
+          "name": "MiniMax 2.1 (0.15x)",
+          "limit": { "context": 200000, "output": 64000 }
+        },
+        "qwen3-coder-next": {
+          "name": "Qwen3 Coder Next (0.05x)",
+          "limit": { "context": 256000, "output": 64000 }
+        }
       }
     }
   }
@@ -174,6 +189,84 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
    - You can also pre-configure defaults in `~/.config/opencode/kiro.json` via
      `idc_start_url` and `idc_region`.
 3. Configuration will be automatically managed at `~/.config/opencode/kiro.db`.
+
+## Account Manager
+
+The plugin also ships a small local account manager for the same SQLite pool used by
+runtime rotation. This makes the Kiro account pool visible and operable without
+manually editing `kiro.db`.
+
+```bash
+# Show saved Kiro accounts and their health/usage state
+opencode-kiro-auth accounts list
+
+# Start the guided flow for adding another Kiro account
+opencode-kiro-auth accounts add
+
+# Only import the currently active kiro-cli login into the plugin pool
+opencode-kiro-auth accounts sync
+
+# Switch the active kiro-cli token to a saved account
+opencode-kiro-auth accounts switch 2
+
+# Temporarily exclude/include accounts from rotation
+opencode-kiro-auth accounts disable 1
+opencode-kiro-auth accounts enable 1
+
+# Clear local health/rate-limit state for an account
+opencode-kiro-auth accounts reset 1
+
+# Remove an account from the plugin pool
+opencode-kiro-auth accounts remove 1
+```
+
+Short aliases are also available through the `kiro-auth` binary:
+
+```bash
+kiro-auth list
+kiro-auth sync
+kiro-auth add
+kiro-auth switch 2
+```
+
+`kiro-auth add` is a guided flow: it saves the active Kiro CLI login, shows an interactive `Open Browser (Easy)` / `Manual / Incognito` chooser, asks for confirmation, logs out the single active Kiro CLI session, launches normal `kiro-cli login`, and imports the new login when Kiro finishes. Easy mode lets Kiro open the browser normally. Manual / Incognito mode captures the real Kiro chooser URL (`https://app.kiro.dev/signin?...redirect_from=kirocli`), copies it to your clipboard, and keeps Kiro CLI running so the localhost callback can complete after you finish login. Use `kiro-auth add --manual` to skip the chooser, `kiro-auth add --browser` for Easy mode, or `kiro-auth sync` when you only want to import the currently active Kiro CLI session without logging out.
+
+Launch the interactive Ink TUI with the short command:
+
+```bash
+kiro-auth
+# or
+kiro-auth tui
+```
+
+TUI shortcuts:
+
+- `up/down` or `j/k`: move selection
+- `enter`: open selected account details
+- `1-9`: quick switch to an account with confirmation
+- `/`: search/filter accounts
+- `g`: leave the dashboard and launch guided add-account login
+- `i`: import the currently active `kiro-cli` login into the pool
+- `s`: confirm and switch Kiro CLI to the selected saved account
+- `e`: enable/disable the selected account with confirmation
+- `r`: confirm and reset local health/rate-limit state
+- `x`: remove with confirmation; this does not log out Kiro CLI
+- `d`: diagnostics with DB paths
+- `?`: help
+- `q` / `esc`: back or quit
+
+Manual alternative: if you do not want the manager flow, log in with Kiro CLI first, then sync:
+
+```bash
+kiro-cli logout
+kiro-cli login
+kiro-auth sync
+kiro-auth list
+```
+
+`disable` only affects this plugin's selector. It does not log out of Kiro CLI or
+delete credentials. `switch` writes the selected saved account back to the Kiro CLI
+token store so follow-up Kiro CLI and plugin requests use the selected account.
 
 ## Local plugin development
 

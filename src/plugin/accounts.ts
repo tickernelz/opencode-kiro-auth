@@ -49,6 +49,7 @@ export class AccountManager {
       accessToken: r.access_token,
       expiresAt: r.expires_at,
       rateLimitResetTime: r.rate_limit_reset,
+      enabled: r.enabled !== 0,
       isHealthy: r.is_healthy === 1,
       unhealthyReason: r.unhealthy_reason,
       recoveryTime: r.recovery_time,
@@ -64,6 +65,9 @@ export class AccountManager {
   }
   getAccounts(): ManagedAccount[] {
     return [...this.accounts]
+  }
+  getAccountByIndex(index: number): ManagedAccount | null {
+    return this.accounts[index] || null
   }
   shouldShowToast(debounce = 10000): boolean {
     if (Date.now() - this.lastToastTime < debounce) return false
@@ -83,6 +87,7 @@ export class AccountManager {
   getCurrentOrNext(): ManagedAccount | null {
     const now = Date.now()
     const available = this.accounts.filter((a) => {
+      if (a.enabled === false) return false
       if (!a.isHealthy) {
         if (isPermanentError(a.unhealthyReason)) {
           return false
@@ -112,7 +117,13 @@ export class AccountManager {
     }
     if (!selected) {
       const fallback = this.accounts
-        .filter((a) => !a.isHealthy && a.failCount < 10 && !isPermanentError(a.unhealthyReason))
+        .filter(
+          (a) =>
+            a.enabled !== false &&
+            !a.isHealthy &&
+            a.failCount < 10 &&
+            !isPermanentError(a.unhealthyReason)
+        )
         .sort(
           (a, b) => (a.usedCount || 0) - (b.usedCount || 0) || (a.lastUsed || 0) - (b.lastUsed || 0)
         )[0]
@@ -163,6 +174,52 @@ export class AccountManager {
         error: e instanceof Error ? e.message : String(e)
       })
     )
+  }
+  async setAccountEnabled(index: number, enabled: boolean): Promise<ManagedAccount> {
+    const acc = this.accounts[index]
+    if (!acc) throw new Error(`No account at index ${index + 1}`)
+    acc.enabled = enabled
+    if (enabled) {
+      acc.isHealthy = true
+      acc.failCount = 0
+      acc.rateLimitResetTime = 0
+      delete acc.unhealthyReason
+      delete acc.recoveryTime
+    }
+    await kiroDb.upsertAccount(acc)
+    return acc
+  }
+  async resetAccount(index: number): Promise<ManagedAccount> {
+    const acc = this.accounts[index]
+    if (!acc) throw new Error(`No account at index ${index + 1}`)
+    acc.enabled = true
+    acc.isHealthy = true
+    acc.failCount = 0
+    acc.rateLimitResetTime = 0
+    delete acc.unhealthyReason
+    delete acc.recoveryTime
+    await kiroDb.upsertAccount(acc)
+    return acc
+  }
+  async switchToAccount(index: number): Promise<ManagedAccount> {
+    const acc = this.accounts[index]
+    if (!acc) throw new Error(`No account at index ${index + 1}`)
+    if (acc.enabled === false) throw new Error(`Account ${index + 1} is disabled`)
+    acc.lastUsed = Date.now()
+    await kiroDb.upsertAccount(acc)
+    await writeToKiroCli(acc)
+    this.cursor = index
+    return acc
+  }
+  async removeAccountAtIndex(index: number): Promise<ManagedAccount> {
+    const acc = this.accounts[index]
+    if (!acc) throw new Error(`No account at index ${index + 1}`)
+    this.accounts.splice(index, 1)
+    await kiroDb.deleteAccount(acc.id)
+    if (this.accounts.length === 0) this.cursor = 0
+    else if (this.cursor >= this.accounts.length) this.cursor = this.accounts.length - 1
+    else if (index <= this.cursor && this.cursor > 0) this.cursor--
+    return acc
   }
   removeAccount(a: ManagedAccount): void {
     const removedIndex = this.accounts.findIndex((x) => x.id === a.id)
