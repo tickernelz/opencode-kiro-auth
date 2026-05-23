@@ -1,14 +1,32 @@
-import { KIRO_CONSTANTS } from './constants.js'
+import {
+  DEFAULT_PROVIDER_MODELS,
+  KIRO_CONSTANTS,
+  KIRO_LEGACY_PROVIDER_ID,
+  KIRO_PROVIDER_ID
+} from './constants.js'
 import { AuthHandler } from './core/auth/auth-handler.js'
 import { RequestHandler } from './core/request/request-handler.js'
 import { AccountCache } from './infrastructure/database/account-cache.js'
 import { AccountRepository } from './infrastructure/database/account-repository.js'
 import { AccountManager } from './plugin/accounts.js'
 import { loadConfig } from './plugin/config/index.js'
+import { ensureOpenCodeAuthPlaceholder } from './plugin/opencode-auth.js'
 
 type ToastFunction = (message: string, variant: string) => void
 
-const KIRO_PROVIDER_ID = 'kiro-auth'
+function mergeProviderModels(existing: Record<string, any> | undefined): Record<string, any> {
+  const merged: Record<string, any> = { ...(existing || {}) }
+
+  for (const [modelID, defaults] of Object.entries(DEFAULT_PROVIDER_MODELS)) {
+    const current = merged[modelID] || {}
+    merged[modelID] = {
+      ...current,
+      ...defaults
+    }
+  }
+
+  return merged
+}
 
 export const createKiroPlugin =
   (id: string) =>
@@ -28,75 +46,30 @@ export const createKiroPlugin =
 
     const requestHandler = new RequestHandler(accountManager, config, repository, client)
 
+    await authHandler.initialize(showToast as any)
+    if (accountManager.getAccountCount() > 0) {
+      ensureOpenCodeAuthPlaceholder(id)
+    }
+
     return {
       config: async (input: any) => {
         if (!input.provider) input.provider = {}
-        if (!input.provider[id]) input.provider[id] = {}
-        input.provider[id].npm = '@ai-sdk/openai-compatible'
-        if (!input.provider[id].models) {
-          input.provider[id].models = {
-            auto: {
-              name: 'Auto (1.0x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            'claude-sonnet-4-5': {
-              name: 'Claude Sonnet 4.5 (1.3x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            'claude-sonnet-4-6': {
-              name: 'Claude Sonnet 4.6 (1.3x)',
-              limit: { context: 1000000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            'claude-sonnet-4': {
-              name: 'Claude Sonnet 4.0 (1.3x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            'claude-haiku-4-5': {
-              name: 'Claude Haiku 4.5 (0.4x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text', 'image'], output: ['text'] }
-            },
-            'claude-opus-4-5': {
-              name: 'Claude Opus 4.5 (2.2x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            'claude-opus-4-6': {
-              name: 'Claude Opus 4.6 (2.2x)',
-              limit: { context: 1000000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            'claude-opus-4-7': {
-              name: 'Claude Opus 4.7 (2.2x)',
-              limit: { context: 1000000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            'minimax-m2.5': {
-              name: 'MiniMax M2.5 (0.25x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text'], output: ['text'] }
-            },
-            'minimax-m2.1': {
-              name: 'MiniMax M2.1 (0.15x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text'], output: ['text'] }
-            },
-            'qwen3-coder-next': {
-              name: 'Qwen3 Coder Next (0.05x)',
-              limit: { context: 256000, output: 64000 },
-              modalities: { input: ['text'], output: ['text'] }
-            }
-          }
+        if (
+          id === KIRO_PROVIDER_ID &&
+          input.provider[KIRO_LEGACY_PROVIDER_ID] &&
+          !input.provider[id]
+        ) {
+          input.provider[id] = input.provider[KIRO_LEGACY_PROVIDER_ID]
         }
+        if (!input.provider[id]) input.provider[id] = {}
+        if (!input.provider[id].name) input.provider[id].name = 'Kiro'
+        input.provider[id].npm = '@ai-sdk/openai-compatible'
+        input.provider[id].models = mergeProviderModels(input.provider[id].models)
       },
       auth: {
         provider: id,
         loader: async (getAuth: any) => {
-          await getAuth()
+          await getAuth().catch(() => undefined)
           await authHandler.initialize(showToast as any)
 
           return {

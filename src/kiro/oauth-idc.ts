@@ -1,5 +1,11 @@
 import { KIRO_AUTH_SERVICE, KIRO_CONSTANTS, buildUrl, normalizeRegion } from '../constants'
 import type { KiroRegion } from '../plugin/types'
+import {
+  deleteCachedOidcClient,
+  getCachedOidcClient,
+  putCachedOidcClient,
+  type CachedOidcClient
+} from './oidc-client-cache'
 
 export interface KiroIDCAuthorization {
   verificationUrl: string
@@ -33,7 +39,7 @@ export async function authorizeKiroIDC(
   const ssoOIDCEndpoint = buildUrl(KIRO_AUTH_SERVICE.SSO_OIDC_ENDPOINT, effectiveRegion)
   const effectiveStartUrl = startUrl || KIRO_AUTH_SERVICE.BUILDER_ID_START_URL
 
-  try {
+  const registerClient = async (): Promise<CachedOidcClient> => {
     const registerResponse = await fetch(`${ssoOIDCEndpoint}/client/register`, {
       method: 'POST',
       headers: {
@@ -55,13 +61,19 @@ export async function authorizeKiroIDC(
     }
 
     const registerData = await registerResponse.json()
-    const { clientId, clientSecret } = registerData
+    const { clientId, clientSecret, clientSecretExpiresAt } = registerData
 
     if (!clientId || !clientSecret) {
       const error = new Error('Client registration response missing clientId or clientSecret')
       throw error
     }
 
+    const client = { clientId, clientSecret, clientSecretExpiresAt }
+    putCachedOidcClient(effectiveRegion, effectiveStartUrl, KIRO_AUTH_SERVICE.SCOPES, client)
+    return client
+  }
+
+  const startDeviceAuthorization = async (client: CachedOidcClient) => {
     const deviceAuthResponse = await fetch(`${ssoOIDCEndpoint}/device_authorization`, {
       method: 'POST',
       headers: {
@@ -69,8 +81,8 @@ export async function authorizeKiroIDC(
         'User-Agent': KIRO_CONSTANTS.USER_AGENT
       },
       body: JSON.stringify({
-        clientId,
-        clientSecret,
+        clientId: client.clientId,
+        clientSecret: client.clientSecret,
         startUrl: effectiveStartUrl
       })
     })
@@ -104,14 +116,28 @@ export async function authorizeKiroIDC(
       verificationUriComplete,
       userCode,
       deviceCode,
-      clientId,
-      clientSecret,
+      clientId: client.clientId,
+      clientSecret: client.clientSecret,
       interval,
       expiresIn,
       region: effectiveRegion,
       startUrl: effectiveStartUrl
     }
+  }
+
+  let client =
+    getCachedOidcClient(effectiveRegion, effectiveStartUrl, KIRO_AUTH_SERVICE.SCOPES) ||
+    (await registerClient())
+
+  try {
+    return await startDeviceAuthorization(client)
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/invalid_client|expired/i.test(message)) {
+      deleteCachedOidcClient(effectiveRegion, effectiveStartUrl, KIRO_AUTH_SERVICE.SCOPES)
+      client = await registerClient()
+      return await startDeviceAuthorization(client)
+    }
     throw error
   }
 }
@@ -234,9 +260,10 @@ export async function pollKiroIDCToken(
     } catch (error) {
       if (
         error instanceof Error &&
-        (error.message.includes('expired') ||
-          error.message.includes('denied') ||
-          error.message.includes('failed'))
+        (error.message.includes('Device code has expired') ||
+          error.message.includes('Authorization was denied') ||
+          error.message.startsWith('Token polling failed:') ||
+          error.message.startsWith('Token request failed'))
       ) {
         throw error
       }

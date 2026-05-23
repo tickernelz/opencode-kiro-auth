@@ -55,7 +55,8 @@ export class AccountManager {
       failCount: r.fail_count || 0,
       lastUsed: r.last_used,
       usedCount: r.used_count,
-      limitCount: r.limit_count
+      limitCount: r.limit_count,
+      subscriptionPlan: r.subscription_plan || undefined
     }))
     return new AccountManager(accounts, strategy || 'sticky')
   }
@@ -125,18 +126,28 @@ export class AccountManager {
     }
     if (selected) {
       selected.lastUsed = now
-      selected.usedCount = (selected.usedCount || 0) + 1
       this.cursor = this.accounts.indexOf(selected)
       return selected
     }
     return null
   }
-  updateUsage(id: string, meta: { usedCount: number; limitCount: number; email?: string }): void {
+  updateUsage(
+    id: string,
+    meta: {
+      usedCount: number
+      limitCount: number
+      email?: string
+      subscriptionPlan?: string
+      lastSync?: number
+    }
+  ): void {
     const a = this.accounts.find((x) => x.id === id)
     if (a) {
       a.usedCount = meta.usedCount
       a.limitCount = meta.limitCount
+      if (meta.lastSync) a.lastSync = meta.lastSync
       if (meta.email) a.email = meta.email
+      if (meta.subscriptionPlan) a.subscriptionPlan = meta.subscriptionPlan
       if (!isPermanentError(a.unhealthyReason)) {
         a.failCount = 0
         a.isHealthy = true

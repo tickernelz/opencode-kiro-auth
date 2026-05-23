@@ -33,11 +33,22 @@ function normalizeStartUrl(raw: string | undefined): string | undefined {
   url.hash = ''
   url.search = ''
 
-  // Normalize common portal URL shapes to end in `/start` (AWS Builder ID and IAM Identity Center)
+  // Normalize common AWS access portal URLs without breaking GovCloud directory URLs.
   if (url.pathname.endsWith('/start/')) url.pathname = url.pathname.replace(/\/start\/$/, '/start')
-  if (!url.pathname.endsWith('/start')) url.pathname = url.pathname.replace(/\/+$/, '') + '/start'
+  if ((url.pathname === '' || url.pathname === '/') && url.hostname.endsWith('.awsapps.com')) {
+    url.pathname = '/start'
+  }
 
   return url.toString()
+}
+
+function canBuildPortalDeviceUrl(startUrl: string): boolean {
+  try {
+    const url = new URL(startUrl)
+    return /\/start\/?$/.test(url.pathname)
+  } catch {
+    return false
+  }
 }
 
 function buildDeviceUrl(startUrl: string, userCode: string): string {
@@ -78,9 +89,10 @@ export class IdcAuthMethod {
     // If a custom Identity Center start URL is provided, prefer the portal device page.
     // This avoids the AWS Builder ID device page (which often prompts for an email)
     // and routes the user into their org's IAM Identity Center sign-in.
-    const verificationUrl = startUrl
-      ? buildDeviceUrl(startUrl, auth.userCode)
-      : auth.verificationUriComplete || auth.verificationUrl
+    const verificationUrl =
+      startUrl && canBuildPortalDeviceUrl(startUrl)
+        ? buildDeviceUrl(startUrl, auth.userCode)
+        : auth.verificationUriComplete || auth.verificationUrl
 
     // Open the *AWS* verification page directly (no local web server).
     openBrowser(verificationUrl)
@@ -173,7 +185,9 @@ export class IdcAuthMethod {
             isHealthy: true,
             failCount: 0,
             usedCount: usage.usedCount,
-            limitCount: usage.limitCount
+            limitCount: usage.limitCount,
+            subscriptionPlan: usage.subscriptionPlan,
+            lastSync: Date.now()
           }
 
           await this.repository.save(acc)

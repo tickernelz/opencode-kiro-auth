@@ -32,6 +32,7 @@ export class AccountRepository {
       lastUsed: r.last_used,
       usedCount: r.used_count,
       limitCount: r.limit_count,
+      subscriptionPlan: r.subscription_plan || undefined,
       lastSync: r.last_sync
     }))
 

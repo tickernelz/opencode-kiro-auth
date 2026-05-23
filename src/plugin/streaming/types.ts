@@ -10,12 +10,15 @@ export interface StreamEvent {
 export interface StreamState {
   thinkingRequested: boolean
   buffer: string
+  pendingTextBeforeThinking: string
   inThinking: boolean
   thinkingExtracted: boolean
   thinkingBlockIndex: number | null
   textBlockIndex: number | null
   nextBlockIndex: number
   stoppedBlocks: Set<number>
+  stripThinkingLeadingNewline: boolean
+  stripTextLeadingNewlinesAfterThinking: boolean
 }
 
 export interface ToolCallState {

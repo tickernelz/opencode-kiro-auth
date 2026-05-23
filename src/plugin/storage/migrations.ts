@@ -7,6 +7,7 @@ export function runMigrations(db: Database): void {
   migrateStartUrlColumn(db)
   migrateOidcRegionColumn(db)
   migrateDropRefreshTokenUniqueIndex(db)
+  migrateSubscriptionPlanColumn(db)
 }
 
 function migrateToUniqueRefreshToken(db: Database): void {
@@ -89,12 +90,13 @@ function migrateRealEmailColumn(db: Database): void {
             refresh_token TEXT NOT NULL, access_token TEXT NOT NULL, expires_at INTEGER NOT NULL,
             rate_limit_reset INTEGER DEFAULT 0, is_healthy INTEGER DEFAULT 1, unhealthy_reason TEXT,
             recovery_time INTEGER, fail_count INTEGER DEFAULT 0, last_used INTEGER DEFAULT 0,
-            used_count INTEGER DEFAULT 0, limit_count INTEGER DEFAULT 0, last_sync INTEGER DEFAULT 0
+            used_count REAL DEFAULT 0, limit_count REAL DEFAULT 0, subscription_plan TEXT,
+            last_sync INTEGER DEFAULT 0
           )
         `)
       db.run(`
-          INSERT INTO accounts_new (id, email, auth_method, region, oidc_region, client_id, client_secret, profile_arn, start_url, refresh_token, access_token, expires_at, rate_limit_reset, is_healthy, unhealthy_reason, recovery_time, fail_count, last_used, used_count, limit_count, last_sync)
-          SELECT id, email, auth_method, region, NULL, client_id, client_secret, profile_arn, NULL, refresh_token, access_token, expires_at, COALESCE(rate_limit_reset, 0), COALESCE(is_healthy, 1), unhealthy_reason, recovery_time, COALESCE(fail_count, 0), COALESCE(last_used, 0), 0, 0, 0 FROM accounts
+          INSERT INTO accounts_new (id, email, auth_method, region, oidc_region, client_id, client_secret, profile_arn, start_url, refresh_token, access_token, expires_at, rate_limit_reset, is_healthy, unhealthy_reason, recovery_time, fail_count, last_used, used_count, limit_count, subscription_plan, last_sync)
+          SELECT id, email, auth_method, region, NULL, client_id, client_secret, profile_arn, NULL, refresh_token, access_token, expires_at, COALESCE(rate_limit_reset, 0), COALESCE(is_healthy, 1), unhealthy_reason, recovery_time, COALESCE(fail_count, 0), COALESCE(last_used, 0), 0, 0, NULL, 0 FROM accounts
         `)
       db.run('DROP TABLE accounts')
       db.run('ALTER TABLE accounts_new RENAME TO accounts')
@@ -105,13 +107,22 @@ function migrateRealEmailColumn(db: Database): void {
   } else {
     const needed: Record<string, string> = {
       fail_count: 'INTEGER DEFAULT 0',
-      used_count: 'INTEGER DEFAULT 0',
-      limit_count: 'INTEGER DEFAULT 0',
+      used_count: 'REAL DEFAULT 0',
+      limit_count: 'REAL DEFAULT 0',
+      subscription_plan: 'TEXT',
       last_sync: 'INTEGER DEFAULT 0'
     }
     for (const [n, d] of Object.entries(needed)) {
       if (!names.has(n)) db.run(`ALTER TABLE accounts ADD COLUMN ${n} ${d}`)
     }
+  }
+}
+
+function migrateSubscriptionPlanColumn(db: Database): void {
+  const columns = db.prepare('PRAGMA table_info(accounts)').all() as any[]
+  const names = new Set(columns.map((c) => c.name))
+  if (!names.has('subscription_plan')) {
+    db.run('ALTER TABLE accounts ADD COLUMN subscription_plan TEXT')
   }
 }
 

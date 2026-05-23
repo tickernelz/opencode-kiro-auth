@@ -7,6 +7,7 @@ import {
   DEFAULT_CONFIG,
   KiroConfigSchema,
   RegionSchema,
+  SdkEndpointModeSchema,
   type KiroConfig
 } from './schema'
 
@@ -115,6 +116,18 @@ function applyEnvOverrides(config: KiroConfig): KiroConfig {
       ? RegionSchema.catch('us-east-1').parse(env.KIRO_DEFAULT_REGION)
       : config.default_region,
 
+    idc_start_url: env.KIRO_IDC_START_URL
+      ? String(env.KIRO_IDC_START_URL).trim()
+      : config.idc_start_url,
+
+    idc_region: env.KIRO_IDC_REGION
+      ? RegionSchema.catch(config.idc_region || config.default_region).parse(env.KIRO_IDC_REGION)
+      : config.idc_region,
+
+    idc_profile_arn: env.KIRO_IDC_PROFILE_ARN
+      ? String(env.KIRO_IDC_PROFILE_ARN).trim()
+      : config.idc_profile_arn,
+
     rate_limit_retry_delay_ms: parseNumberEnv(
       env.KIRO_RATE_LIMIT_RETRY_DELAY_MS,
       config.rate_limit_retry_delay_ms
@@ -156,6 +169,12 @@ function applyEnvOverrides(config: KiroConfig): KiroConfig {
       env.KIRO_USAGE_TRACKING_ENABLED,
       config.usage_tracking_enabled
     ),
+
+    auto_sync_kiro_cli: parseBooleanEnv(env.KIRO_AUTO_SYNC_KIRO_CLI, config.auto_sync_kiro_cli),
+
+    sdk_endpoint_mode: env.KIRO_SDK_ENDPOINT_MODE
+      ? SdkEndpointModeSchema.catch('auto').parse(env.KIRO_SDK_ENDPOINT_MODE)
+      : config.sdk_endpoint_mode,
 
     enable_log_api_request: parseBooleanEnv(
       env.KIRO_ENABLE_LOG_API_REQUEST,

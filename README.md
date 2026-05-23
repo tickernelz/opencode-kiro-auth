@@ -4,347 +4,222 @@
 [![npm downloads](https://img.shields.io/npm/dm/@zhafron/opencode-kiro-auth)](https://www.npmjs.com/package/@zhafron/opencode-kiro-auth)
 [![license](https://img.shields.io/npm/l/@zhafron/opencode-kiro-auth)](https://www.npmjs.com/package/@zhafron/opencode-kiro-auth)
 
-OpenCode plugin for AWS Kiro (CodeWhisperer) providing access to Claude Sonnet and Haiku
-models with substantial trial quotas.
+OpenCode provider plugin for Kiro and Amazon Q Developer authentication. It exposes
+Kiro-supported models through OpenCode while using AWS Builder ID, IAM Identity Center,
+or an existing `kiro-cli` session for credentials.
 
-## Features
+## Requirements
 
-- **Multiple Auth Methods**: Supports AWS Builder ID (IDC), IAM Identity Center (custom
-  Start URL), and Kiro Desktop (CLI-based) authentication.
-- **Auto-Sync Kiro CLI**: Automatically imports and synchronizes active sessions from
-  your local `kiro-cli` SQLite database.
-- **Gradual Context Truncation**: Intelligently prevents error 400 by reducing context
-  size dynamically during retries.
-- **Intelligent Account Rotation**: Prioritizes multi-account usage based on lowest
-  available quota.
-- **High-Performance Storage**: Efficient account and usage management using native Bun
-  SQLite.
-- **Native Thinking Mode**: Full support for Claude reasoning capabilities via virtual
-  model mappings.
-- **Automated Recovery**: Exponential backoff for rate limits and automated token
-  refresh.
+- OpenCode `>= 1.15.0`
+- Bun, as used by OpenCode plugin runtime
+- `kiro-cli` recommended for the most reliable IAM Identity Center profile selection
 
-## Installation
+## Install
 
-Add the plugin to your `opencode.json` or `opencode.jsonc`:
-
-```json
-{
-  "plugin": ["@zhafron/opencode-kiro-auth"],
-  "provider": {
-    "kiro": {
-      "models": {
-        "claude-sonnet-4-5": {
-          "name": "Claude Sonnet 4.5",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-sonnet-4-5-thinking": {
-          "name": "Claude Sonnet 4.5 Thinking",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "claude-sonnet-4-6": {
-          "name": "Claude Sonnet 4.6",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-sonnet-4-6-thinking": {
-          "name": "Claude Sonnet 4.6 Thinking",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "claude-haiku-4-5": {
-          "name": "Claude Haiku 4.5",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image"], "output": ["text"] }
-        },
-        "claude-opus-4-5": {
-          "name": "Claude Opus 4.5",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-opus-4-5-thinking": {
-          "name": "Claude Opus 4.5 Thinking",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "claude-opus-4-6": {
-          "name": "Claude Opus 4.6",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-opus-4-6-thinking": {
-          "name": "Claude Opus 4.6 Thinking",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "claude-opus-4-6-1m": {
-          "name": "Claude Opus 4.6 (1M Context)",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-opus-4-6-1m-thinking": {
-          "name": "Claude Opus 4.6 (1M Context) Thinking",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "claude-sonnet-4-5-1m": {
-          "name": "Claude Sonnet 4.5 (1M Context)",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-sonnet-4-6-1m": {
-          "name": "Claude Sonnet 4.6 (1M Context)",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-sonnet-4-6-1m-thinking": {
-          "name": "Claude Sonnet 4.6 (1M Context) Thinking",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "auto": { "name": "Auto (1.0x)" },
-        "claude-sonnet-4": { "name": "Claude Sonnet 4.0 (1.3x)", "limit": { "context": 200000, "output": 64000 } },
-        "deepseek-3.2": { "name": "DeepSeek 3.2 (0.25x)", "limit": { "context": 128000, "output": 64000 } },
-        "minimax-m2.5": { "name": "MiniMax 2.5 (0.25x)", "limit": { "context": 200000, "output": 64000 } },
-        "minimax-m2.1": { "name": "MiniMax 2.1 (0.15x)", "limit": { "context": 200000, "output": 64000 } },
-        "qwen3-coder-next": { "name": "Qwen3 Coder Next (0.05x)", "limit": { "context": 256000, "output": 64000 } }
-      }
-    }
-  }
-}
-```
-
-## Setup
-
-1. **Authentication via Kiro CLI (Recommended)**:
-   - Perform login directly in your terminal using `kiro-cli login`.
-   - The plugin will automatically detect and import your session on startup.
-   - For AWS IAM Identity Center (SSO/IDC), the plugin imports both the token and device
-     registration (OIDC client credentials) from the `kiro-cli` database.
-2. **Direct Authentication**:
-   - Run `opencode auth login`.
-   - Select `Other`, type `kiro`, and press enter.
-   - You'll be prompted for your **IAM Identity Center Start URL** and **IAM Identity
-     Center region** (`sso_region`).
-     - Leave it blank to sign in with **AWS Builder ID**.
-     - Enter your company's Start URL (e.g. `https://your-company.awsapps.com/start`) to
-       use **IAM Identity Center (SSO)**.
-   - Note: the TUI `/connect` flow currently does **not** run plugin OAuth prompts
-     (Start URL / region), so Identity Center logins may fall back to Builder ID unless
-     you use `opencode auth login` (or preconfigure defaults in
-     `~/.config/opencode/kiro.json`).
-   - For **IAM Identity Center**, you may also need a **profile ARN** (`profileArn`).
-     - If `kiro-cli` is installed and you've selected a profile once
-       (`kiro-cli profile`), the plugin auto-detects it.
-     - Otherwise, set `idc_profile_arn` in `~/.config/opencode/kiro.json`.
-   - A browser window will open directly to AWS' verification URL (no local auth
-     server). If it doesn't, copy/paste the URL and enter the code printed by OpenCode.
-   - You can also pre-configure defaults in `~/.config/opencode/kiro.json` via
-     `idc_start_url` and `idc_region`.
-3. Configuration will be automatically managed at `~/.config/opencode/kiro.db`.
-
-## Local plugin development
-
-OpenCode installs plugins into a cache directory (typically
-`~/.cache/opencode/node_modules`).
-
-The simplest way to test local changes (without publishing to npm) is to build this repo
-and hot-swap the cached plugin `dist/` folder:
-
-1. Build this repo: `bun run build` (or `npm run build`)
-2. Hot-swap `dist/` (creates a timestamped backup):
+Recommended install:
 
 ```bash
-PLUGIN_DIR="$HOME/.cache/opencode/node_modules/@zhafron/opencode-kiro-auth"
-TS=$(date +%Y%m%d-%H%M%S)
-cp -a "$PLUGIN_DIR/dist" "$PLUGIN_DIR/dist.bak.$TS"
-rm -rf "$PLUGIN_DIR/dist"
-cp -a "/absolute/path/to/opencode-kiro-auth/dist" "$PLUGIN_DIR/dist"
-echo "Backup at: $PLUGIN_DIR/dist.bak.$TS"
+opencode plugin @zhafron/opencode-kiro-auth --global
 ```
 
-Revert:
+OpenCode's plugin installer reads this package's server and TUI entrypoints and updates
+both config files. If you configure it manually, add the server plugin to
+`~/.config/opencode/opencode.jsonc`:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["@zhafron/opencode-kiro-auth"]
+}
+```
+
+And add the TUI plugin to `~/.config/opencode/tui.jsonc`:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "plugin": ["@zhafron/opencode-kiro-auth"]
+}
+```
+
+The plugin registers provider ID `kiro`, sets `@ai-sdk/openai-compatible`, and injects
+the current built-in model catalog. You normally do not need to copy model definitions
+into your OpenCode config.
+
+## Models
+
+The default catalog includes:
+
+- `auto`
+- `claude-opus-4.7`
+- `claude-opus-4.6`
+- `claude-sonnet-4.6`
+- `claude-opus-4.5`
+- `claude-sonnet-4.5`
+- `claude-sonnet-4`
+- `claude-haiku-4.5`
+- `deepseek-3.2`
+- `glm-5`
+- `minimax-m2.5`
+- `minimax-m2.1`
+- `qwen3-coder-next`
+
+Compatibility aliases for older local configs are retained where possible, including
+historical hyphenated, `*-thinking`, and `*-1m` aliases. The provider only lists the
+official Kiro CLI model slugs by default.
+
+## Authentication
+
+### Recommended: sync from Kiro CLI
+
+1. Run `kiro-cli login`.
+2. If you use IAM Identity Center, run `kiro-cli profile` once and select your Amazon Q
+   Developer or CodeWhisperer profile.
+3. Start OpenCode.
+
+When `auto_sync_kiro_cli` is enabled, the plugin reads the local `kiro-cli` SQLite
+session, imports access/refresh tokens and OIDC client credentials, imports the active
+profile ARN, and creates the minimal OpenCode auth placeholder needed for provider
+loader startup.
+
+### Direct OpenCode login
+
+Run:
 
 ```bash
-PLUGIN_DIR="$HOME/.cache/opencode/node_modules/@zhafron/opencode-kiro-auth"
-rm -rf "$PLUGIN_DIR/dist"
-mv "$PLUGIN_DIR/dist.bak.YYYYMMDD-HHMMSS" "$PLUGIN_DIR/dist"
+opencode auth login --provider kiro
 ```
 
-## Troubleshooting
+Choose `AWS Builder ID / IAM Identity Center`.
 
-### Error: Status: 403 (AccessDeniedException / User is not authorized)
+- Leave Start URL blank for AWS Builder ID.
+- Enter your IAM Identity Center Start URL for organization SSO, for example
+  `https://d-xxxxxxxxxx.awsapps.com/start`.
+- Enter the IAM Identity Center region, also called `sso_region`.
+- For IAM Identity Center, set a profile ARN if usage or generation returns 403.
 
-If you're using **IAM Identity Center** (a custom Start URL), the Q Developer /
-CodeWhisperer APIs typically require a **profile ARN**.
-
-This plugin reads the active profile ARN from your local `kiro-cli` database
-(`state.key = api.codewhisperer.profile`) and sends it as `profileArn`.
-
-Fix:
-
-1. Run `kiro-cli profile` and select a profile (e.g. `QDevProfile-us-east-1`).
-2. Retry `opencode auth login` (or restart OpenCode so it re-syncs).
-
-### Error: No accounts
-
-This happens when the plugin has no records in `~/.config/opencode/kiro.db`.
-
-1. Ensure `kiro-cli login` succeeds.
-2. Ensure `auto_sync_kiro_cli` is `true` in `~/.config/opencode/kiro.json`.
-3. Retry the request; the plugin will attempt a Kiro CLI sync when it detects zero
-   accounts.
-
-### Note: `/connect` vs `opencode auth login`
-
-If you need to enter provider-specific values for an OAuth login (like IAM Identity
-Center Start URL / region), use `opencode auth login`. The current TUI `/connect` flow
-may not display plugin OAuth prompts, so it can’t collect those inputs.
-
-Note for IDC/SSO (ODIC): the plugin may temporarily create an account with a placeholder
-email if it cannot fetch the real email during sync (e.g. offline).
-It will replace it with the real email once usage/email lookup succeeds.
-
-### Kiro CLI (Google/GitHub OAuth) users: plugin sync never runs
-
-If you authenticated via `kiro-cli login` using Google or GitHub OAuth (not AWS Builder
-ID or IAM Identity Center), the plugin's sync may never trigger.
-This happens because OpenCode requires a kiro entry in `auth.json` before making API
-requests, but the plugin loader only runs when a request is made.
-
-**Workaround:** Add a minimal placeholder entry to `~/.local/share/opencode/auth.json`:
-
-```json
-{
-  "kiro": {
-    "type": "api",
-    "key": "placeholder"
-  }
-}
-```
-
-After adding this, OpenCode will treat the provider as connected, trigger the plugin
-loader, and the kiro-cli sync will populate `kiro.db` with your actual tokens.
-The placeholder values are not used for API calls.
-
-**Important:** Ensure `auto_sync_kiro_cli` is `true` in `~/.config/opencode/kiro.json`
-and that `kiro-cli login` succeeds before applying this workaround.
-
-### Error: ERR_INVALID_URL
-
-`TypeError [ERR_INVALID_URL]: "undefined/chat/completions" cannot be parsed as a URL`
-
-If this happens, check your auth.json in .local/share/opencode.
-example:
-
-```json
-{
-  "kiro": {
-    "type": "api",
-    "key": "whatever"
-  }
-}
-```
+The plugin uses the IAM Identity Center device authorization flow, opens the AWS
+verification page directly, caches OIDC public-client registration securely under
+`~/.config/opencode`, and refreshes access tokens without starting a local callback
+server.
 
 ## Configuration
 
-The plugin supports extensive configuration options.
-Edit `~/.config/opencode/kiro.json`:
+User config lives at `~/.config/opencode/kiro.json`. A default file is created
+automatically.
 
 ```json
 {
   "auto_sync_kiro_cli": true,
   "account_selection_strategy": "lowest-usage",
   "default_region": "us-east-1",
-  "idc_start_url": "https://your-company.awsapps.com/start",
+  "idc_start_url": "https://d-xxxxxxxxxx.awsapps.com/start",
   "idc_region": "us-east-1",
-  "rate_limit_retry_delay_ms": 5000,
-  "rate_limit_max_retries": 3,
-  "max_request_iterations": 20,
-  "request_timeout_ms": 120000,
-  "token_expiry_buffer_ms": 120000,
-  "usage_sync_max_retries": 3,
+  "idc_profile_arn": "arn:aws:codewhisperer:us-east-1:123456789012:profile/XXXXXXXXXX",
   "usage_tracking_enabled": true,
-  "enable_log_api_request": false
+  "sdk_endpoint_mode": "auto",
+  "request_timeout_ms": 120000
 }
 ```
 
-### Configuration Options
+Environment overrides:
 
-- `auto_sync_kiro_cli`: Automatically sync sessions from Kiro CLI (default: `true`).
-- `account_selection_strategy`: Account rotation strategy (`sticky`, `round-robin`,
-  `lowest-usage`).
-- `default_region`: AWS region (`us-east-1`, `us-west-2`).
-- `idc_start_url`: Default IAM Identity Center Start URL (e.g.
-  `https://your-company.awsapps.com/start`). Leave unset/blank to default to AWS Builder
-  ID.
-- `idc_region`: IAM Identity Center (SSO OIDC) region (`sso_region`). Defaults to
-  `us-east-1`.
-- `rate_limit_retry_delay_ms`: Delay between rate limit retries (1000-60000ms).
-- `rate_limit_max_retries`: Maximum retry attempts for rate limits (0-10).
-- `max_request_iterations`: Maximum loop iterations to prevent hangs (10-1000).
-- `request_timeout_ms`: Request timeout in milliseconds (60000-600000ms).
-- `token_expiry_buffer_ms`: Token refresh buffer time (30000-300000ms).
-- `usage_sync_max_retries`: Retry attempts for usage sync (0-5).
-- `auth_server_port_start`: Legacy/ignored (no local auth server).
-- `auth_server_port_range`: Legacy/ignored (no local auth server).
-- `usage_tracking_enabled`: Enable usage tracking and toast notifications.
-- `enable_log_api_request`: Enable detailed API request logging.
+- `KIRO_IDC_START_URL`
+- `KIRO_IDC_REGION`
+- `KIRO_IDC_PROFILE_ARN`
+- `KIRO_DEFAULT_REGION`
+- `KIRO_AUTO_SYNC_KIRO_CLI`
+- `KIRO_ACCOUNT_SELECTION_STRATEGY`
+- `KIRO_USAGE_TRACKING_ENABLED`
+- `KIRO_SDK_ENDPOINT_MODE` (`auto`, `sdk-default`, or `legacy-q`)
+- `KIRO_ENABLE_LOG_API_REQUEST`
 
-## Storage
+## TUI Usage Panel
 
-**Linux/macOS:**
+The package exposes a separate TUI plugin at `@zhafron/opencode-kiro-auth/tui`.
+When the package is listed in `tui.jsonc`, OpenCode resolves that subpath automatically.
 
-- SQLite Database: `~/.config/opencode/kiro.db`
-- Plugin Config: `~/.config/opencode/kiro.json`
+The TUI plugin reads `~/.config/opencode/kiro.db`, refreshes every 15 seconds, and shows:
 
-**Windows:**
+- subscription plan, for example `KIRO PRO+`
+- request usage in `used / limit` form, with used requests shown to two decimals
 
-- SQLite Database: `%APPDATA%\opencode\kiro.db`
-- Plugin Config: `%APPDATA%\opencode\kiro.json`
+OpenCode only shows the session sidebar automatically when the terminal is wider than
+120 columns. On narrower terminals, use the sidebar toggle from the command palette.
+The Kiro section is hidden for sessions whose active message provider is not `kiro`.
 
-## Acknowledgements
+If the panel is empty:
 
-Special thanks to [AIClient-2-API](https://github.com/justlovemaki/AIClient-2-API) for
-providing the foundational Kiro authentication logic and request patterns.
+1. Confirm the TUI config contains the plugin:
 
-## Disclaimer
+   ```jsonc
+   {
+     "$schema": "https://opencode.ai/tui.json",
+     "plugin": ["@zhafron/opencode-kiro-auth"]
+   }
+   ```
 
-This plugin is provided strictly for learning and educational purposes.
-It is an independent implementation and is not affiliated with, endorsed by, or
-supported by Amazon Web Services (AWS) or Anthropic.
-Use of this plugin is at your own risk.
+2. Confirm usage tracking is enabled in `~/.config/opencode/kiro.json`.
+3. Run one Kiro request or restart OpenCode so the server plugin can sync quota.
+4. Check `~/.config/opencode/kiro.db` for an `accounts` row with `used_count`,
+   `limit_count`, and `subscription_plan`.
 
-Feel free to open a PR to optimize this plugin further.
+## Troubleshooting
+
+### No accounts
+
+Run `kiro-cli login`, then `kiro-cli profile` for IAM Identity Center, and keep
+`auto_sync_kiro_cli` enabled. The plugin imports CLI credentials during startup.
+
+### 403 AccessDeniedException
+
+IAM Identity Center accounts commonly require a Q Developer or CodeWhisperer profile
+ARN. Run:
+
+```bash
+kiro-cli profile
+```
+
+Then restart OpenCode, or set `idc_profile_arn` in `~/.config/opencode/kiro.json`.
+
+### Stale `kiro-auth` provider config
+
+Older versions used provider ID `kiro-auth`. Current versions use `kiro`. The plugin
+migrates an existing `kiro-auth` auth entry to `kiro` when possible, but your OpenCode
+config should use `kiro` going forward.
+
+### Logs
+
+Plugin logs are written to:
+
+```text
+~/.config/opencode/kiro-logs/plugin.log
+```
+
+OpenCode logs are written to:
+
+```text
+~/.local/share/opencode/log
+```
+
+## Development
+
+```bash
+bun install
+bun run typecheck
+bun test
+bun run build
+```
+
+To test local changes in OpenCode's npm plugin cache:
+
+```bash
+bun run build
+scripts/opencode_plugin_hotswap.sh @zhafron/opencode-kiro-auth /home/user/github/opencode-kiro-auth
+```
+
+Restore the latest backup:
+
+```bash
+scripts/opencode_plugin_restore.sh @zhafron/opencode-kiro-auth
+```

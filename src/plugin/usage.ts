@@ -1,8 +1,41 @@
 import { KiroAuthDetails, ManagedAccount } from './types'
 
+export function normalizeSubscriptionPlan(data: any): string | undefined {
+  const plan =
+    data?.subscriptionInfo?.subscriptionTitle ||
+    data?.subscription?.title ||
+    data?.subscriptionInfo?.tier ||
+    data?.subscription?.tier ||
+    data?.tierId
+
+  if (typeof plan !== 'string') return undefined
+  const cleaned = plan.trim()
+  return cleaned || undefined
+}
+
+export function extractUsageTotals(data: any): { usedCount: number; limitCount: number } {
+  let usedCount = 0
+  let limitCount = 0
+
+  if (Array.isArray(data?.usageBreakdownList)) {
+    for (const s of data.usageBreakdownList) {
+      if (s.freeTrialInfo) {
+        usedCount += s.freeTrialInfo.currentUsageWithPrecision ?? s.freeTrialInfo.currentUsage ?? 0
+        limitCount += s.freeTrialInfo.usageLimitWithPrecision ?? s.freeTrialInfo.usageLimit ?? 0
+      }
+      usedCount += s.currentUsageWithPrecision ?? s.currentUsage ?? 0
+      limitCount += s.usageLimitWithPrecision ?? s.usageLimit ?? 0
+    }
+  }
+
+  return { usedCount, limitCount }
+}
+
 export async function fetchUsageLimits(auth: KiroAuthDetails): Promise<any> {
   // Try different parameter combinations
   const attempts: Array<{ resourceType?: string; origin?: string }> = [
+    { origin: 'KIRO_CLI' },
+    { resourceType: 'AGENTIC_REQUEST', origin: 'KIRO_CLI' },
     { resourceType: 'AGENTIC_REQUEST', origin: 'AI_EDITOR' },
     { origin: 'AI_EDITOR' },
     { resourceType: 'CONVERSATION', origin: 'AI_EDITOR' },
@@ -56,19 +89,13 @@ export async function fetchUsageLimits(auth: KiroAuthDetails): Promise<any> {
       }
 
       const data: any = await res.json()
-      let usedCount = 0,
-        limitCount = 0
-      if (Array.isArray(data.usageBreakdownList)) {
-        for (const s of data.usageBreakdownList) {
-          if (s.freeTrialInfo) {
-            usedCount += s.freeTrialInfo.currentUsage || 0
-            limitCount += s.freeTrialInfo.usageLimit || 0
-          }
-          usedCount += s.currentUsage || 0
-          limitCount += s.usageLimit || 0
-        }
+      const { usedCount, limitCount } = extractUsageTotals(data)
+      return {
+        usedCount,
+        limitCount,
+        email: data.userInfo?.email,
+        subscriptionPlan: normalizeSubscriptionPlan(data)
       }
-      return { usedCount, limitCount, email: data.userInfo?.email }
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e))
       if (index < attempts.length - 1) continue
@@ -86,10 +113,14 @@ export function updateAccountQuota(
   const meta = {
     usedCount: usage.usedCount || 0,
     limitCount: usage.limitCount || 0,
-    email: usage.email
+    email: usage.email,
+    subscriptionPlan: usage.subscriptionPlan,
+    lastSync: Date.now()
   }
   account.usedCount = meta.usedCount
   account.limitCount = meta.limitCount
+  account.lastSync = meta.lastSync
   if (usage.email) account.email = usage.email
+  if (usage.subscriptionPlan) account.subscriptionPlan = usage.subscriptionPlan
   if (accountManager) accountManager.updateUsage(account.id, meta)
 }

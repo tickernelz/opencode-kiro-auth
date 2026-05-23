@@ -1,11 +1,12 @@
 import { GenerateAssistantResponseCommand } from '@aws/codewhisperer-streaming-client'
+import { KIRO_PROVIDER_ID, THINKING_BUDGET_BY_EFFORT } from '../../constants'
 import type { AccountRepository } from '../../infrastructure/database/account-repository'
 import type { AccountManager } from '../../plugin/accounts'
 import type { KiroConfig } from '../../plugin/config'
 import { isPermanentError } from '../../plugin/health'
 import * as logger from '../../plugin/logger'
 import { transformToSdkRequest } from '../../plugin/request'
-import { createSdkClient } from '../../plugin/sdk-client'
+import { createSdkClient, type ResolvedSdkEndpointMode } from '../../plugin/sdk-client'
 import { syncFromKiroCli } from '../../plugin/sync/kiro-cli'
 import type { KiroAuthDetails, ManagedAccount, SdkPreparedRequest } from '../../plugin/types'
 import { AccountSelector } from '../account/account-selector'
@@ -14,6 +15,7 @@ import { TokenRefresher } from '../auth/token-refresher'
 import { ErrorHandler } from './error-handler'
 import { ResponseHandler } from './response-handler'
 import { RetryStrategy } from './retry-strategy'
+import { shouldFallbackSdkEndpointError } from './sdk-endpoint-fallback'
 
 type ToastFunction = (message: string, variant: 'info' | 'warning' | 'success' | 'error') => void
 
@@ -61,8 +63,13 @@ export class RequestHandler {
   ): Promise<Response> {
     const body = init?.body ? JSON.parse(init.body) : {}
     const model = this.extractModel(url) || body.model || 'claude-sonnet-4-5'
-    const think = model.endsWith('-thinking') || !!body.providerOptions?.thinkingConfig
-    const budget = body.providerOptions?.thinkingConfig?.thinkingBudget || 20000
+    const effort = this.extractReasoningEffort(body)
+    const explicitThinkingBudget = body.providerOptions?.thinkingConfig?.thinkingBudget
+    const think = model.endsWith('-thinking') || !!explicitThinkingBudget || !!effort
+    const budget =
+      explicitThinkingBudget ||
+      (effort ? THINKING_BUDGET_BY_EFFORT[effort] : undefined) ||
+      (model.endsWith('-thinking') ? THINKING_BUDGET_BY_EFFORT.high : 20000)
 
     let retry = 0
     let consecutiveNullAccounts = 0
@@ -110,19 +117,16 @@ export class RequestHandler {
 
       const sdkPrep = this.prepareSdkRequest(init?.body, model, auth, think, budget, showToast)
 
+      let sdkEndpointMode = this.getSdkEndpointModes()[0] || 'sdk-default'
       const apiTimestamp = this.config.enable_log_api_request ? logger.getTimestamp() : null
       if (apiTimestamp) {
-        this.logSdkRequest(sdkPrep, acc, apiTimestamp)
+        this.logSdkRequest(sdkPrep, acc, apiTimestamp, sdkEndpointMode)
       }
 
       try {
-        const client = createSdkClient(auth, sdkPrep.region)
-        const command = new GenerateAssistantResponseCommand({
-          conversationState: sdkPrep.conversationState as any,
-          profileArn: sdkPrep.profileArn
-        })
-
-        const sdkResponse = await client.send(command)
+        const sdkResult = await this.sendSdkRequestWithEndpointFallback(auth, sdkPrep)
+        sdkEndpointMode = sdkResult.endpointMode
+        const sdkResponse = sdkResult.sdkResponse
 
         if (apiTimestamp) {
           this.logSdkResponse(sdkPrep, apiTimestamp)
@@ -135,14 +139,15 @@ export class RequestHandler {
           sdkResponse,
           model,
           sdkPrep.conversationId,
-          sdkPrep.streaming
+          sdkPrep.streaming,
+          think
         )
       } catch (e: any) {
         const httpStatus = e?.$metadata?.httpStatusCode
 
         if (httpStatus) {
           if (apiTimestamp) {
-            this.logSdkError(sdkPrep, e, acc, apiTimestamp)
+            this.logSdkError(sdkPrep, e, acc, apiTimestamp, e.__kiroEndpointMode || sdkEndpointMode)
           }
 
           const mockResponse = new Response(
@@ -216,10 +221,71 @@ export class RequestHandler {
     }
   }
 
-  private logSdkRequest(prep: SdkPreparedRequest, acc: ManagedAccount, timestamp: string): void {
+  private async sendSdkRequestWithEndpointFallback(
+    auth: KiroAuthDetails,
+    prep: SdkPreparedRequest
+  ): Promise<{ sdkResponse: any; endpointMode: ResolvedSdkEndpointMode }> {
+    const endpointModes = this.getSdkEndpointModes()
+    let lastError: any
+
+    for (let i = 0; i < endpointModes.length; i++) {
+      const endpointMode = endpointModes[i] || 'sdk-default'
+      try {
+        const client = createSdkClient(auth, prep.region, endpointMode)
+        const command = new GenerateAssistantResponseCommand({
+          conversationState: prep.conversationState as any,
+          profileArn: prep.profileArn
+        })
+        const sdkResponse = await client.send(command)
+        return { sdkResponse, endpointMode }
+      } catch (e: any) {
+        e.__kiroEndpointMode = endpointMode
+        lastError = e
+
+        if (i < endpointModes.length - 1 && this.shouldFallbackSdkEndpoint(e)) {
+          logger.warn('SDK endpoint failed; trying fallback endpoint', {
+            endpointMode,
+            fallbackEndpointMode: endpointModes[i + 1],
+            status: e?.$metadata?.httpStatusCode,
+            name: e?.name,
+            message: e?.message
+          })
+          continue
+        }
+
+        throw e
+      }
+    }
+
+    throw lastError
+  }
+
+  private getSdkEndpointModes(): ResolvedSdkEndpointMode[] {
+    if (this.config.sdk_endpoint_mode === 'legacy-q') return ['legacy-q']
+    if (this.config.sdk_endpoint_mode === 'sdk-default') return ['sdk-default']
+    return ['sdk-default', 'legacy-q']
+  }
+
+  private shouldFallbackSdkEndpoint(error: any): boolean {
+    return shouldFallbackSdkEndpointError(error)
+  }
+
+  private formatSdkEndpointUrl(region: string, endpointMode: ResolvedSdkEndpointMode): string {
+    if (endpointMode === 'legacy-q') {
+      return `https://q.${region}.amazonaws.com/generateAssistantResponse`
+    }
+    return `https://amazoncodewhispererstreamingservice.${region}.amazonaws.com/generateAssistantResponse`
+  }
+
+  private logSdkRequest(
+    prep: SdkPreparedRequest,
+    acc: ManagedAccount,
+    timestamp: string,
+    endpointMode: ResolvedSdkEndpointMode
+  ): void {
     logger.logApiRequest(
       {
-        url: `https://q.${prep.region}.amazonaws.com/generateAssistantResponse`,
+        url: this.formatSdkEndpointUrl(prep.region, endpointMode),
         method: 'POST',
         headers: { 'x-amzn-kiro-agent-mode': 'vibe' },
         body: {
@@ -256,7 +322,8 @@ export class RequestHandler {
     prep: SdkPreparedRequest,
     error: any,
     acc: ManagedAccount,
-    apiTimestamp: string
+    apiTimestamp: string,
+    endpointMode: ResolvedSdkEndpointMode
   ): void {
     const status = error?.$metadata?.httpStatusCode || 0
     const rData = {
@@ -270,7 +337,7 @@ export class RequestHandler {
     if (!this.config.enable_log_api_request) {
       logger.logApiError(
         {
-          url: `https://q.${prep.region}.amazonaws.com/generateAssistantResponse`,
+          url: this.formatSdkEndpointUrl(prep.region, endpointMode),
           method: 'POST',
           headers: {},
           body: null,
@@ -314,12 +381,12 @@ export class RequestHandler {
     try {
       showToast('Session expired. Re-authenticating...', 'warning')
       await this.client.provider.oauth.authorize({
-        path: { id: 'kiro' },
+        path: { id: KIRO_PROVIDER_ID },
         body: { method: 0 }
       })
 
       await this.client.provider.oauth.callback({
-        path: { id: 'kiro' },
+        path: { id: KIRO_PROVIDER_ID },
         body: { method: 0 }
       })
 
@@ -360,5 +427,21 @@ export class RequestHandler {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  private extractReasoningEffort(body: any): keyof typeof THINKING_BUDGET_BY_EFFORT | undefined {
+    const value =
+      body?.reasoning_effort ||
+      body?.reasoningEffort ||
+      body?.providerOptions?.openaiCompatible?.reasoningEffort ||
+      body?.providerOptions?.openaiCompatible?.reasoning_effort ||
+      body?.providerOptions?.reasoningEffort
+
+    if (typeof value !== 'string') return undefined
+    const normalized = value.toLowerCase()
+    if (normalized in THINKING_BUDGET_BY_EFFORT) {
+      return normalized as keyof typeof THINKING_BUDGET_BY_EFFORT
+    }
+    return undefined
   }
 }

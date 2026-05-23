@@ -45,6 +45,7 @@ export interface ManagedAccount {
   failCount: number
   usedCount?: number
   limitCount?: number
+  subscriptionPlan?: string
   lastSync?: number
   lastUsed?: number
 }

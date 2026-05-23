@@ -2,13 +2,16 @@ import { CodeWhispererStreamingClient } from '@aws/codewhisperer-streaming-clien
 import { KIRO_CONSTANTS } from '../constants.js'
 import type { KiroAuthDetails } from './types'
 
+export type ResolvedSdkEndpointMode = 'sdk-default' | 'legacy-q'
+
 const clientCache = new Map<string, { client: CodeWhispererStreamingClient; token: string }>()
 
 export function createSdkClient(
   auth: KiroAuthDetails,
-  region: string
+  region: string,
+  endpointMode: ResolvedSdkEndpointMode = 'sdk-default'
 ): CodeWhispererStreamingClient {
-  const cacheKey = `${region}:${auth.email || 'default'}`
+  const cacheKey = `${region}:${endpointMode}:${auth.email || auth.clientId || 'default'}`
   const cached = clientCache.get(cacheKey)
 
   if (cached && cached.token === auth.access) {
@@ -16,13 +19,18 @@ export function createSdkClient(
   }
 
   const token = auth.access
-  const client = new CodeWhispererStreamingClient({
+  const clientConfig: ConstructorParameters<typeof CodeWhispererStreamingClient>[0] = {
     region,
-    endpoint: `https://q.${region}.amazonaws.com`,
     token: () => Promise.resolve({ token }),
     maxAttempts: 1,
     customUserAgent: [[KIRO_CONSTANTS.USER_AGENT]]
-  })
+  }
+
+  if (endpointMode === 'legacy-q') {
+    clientConfig.endpoint = `https://q.${region}.amazonaws.com`
+  }
+
+  const client = new CodeWhispererStreamingClient(clientConfig)
 
   client.middlewareStack.add(
     (next: any) => async (args: any) => {

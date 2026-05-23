@@ -7,10 +7,11 @@ export class ResponseHandler {
     response: Response,
     model: string,
     conversationId: string,
-    streaming: boolean
+    streaming: boolean,
+    thinkingRequested = false
   ): Promise<Response> {
     if (streaming) {
-      return this.handleStreaming(response, model, conversationId)
+      return this.handleStreaming(response, model, conversationId, thinkingRequested)
     }
     return this.handleNonStreaming(response, model, conversationId)
   }
@@ -19,10 +20,11 @@ export class ResponseHandler {
     sdkResponse: any,
     model: string,
     conversationId: string,
-    streaming: boolean
+    streaming: boolean,
+    thinkingRequested = false
   ): Promise<Response> {
     if (streaming) {
-      return this.handleSdkStreaming(sdkResponse, model, conversationId)
+      return this.handleSdkStreaming(sdkResponse, model, conversationId, thinkingRequested)
     }
     return this.handleSdkNonStreaming(sdkResponse, model, conversationId)
   }
@@ -30,9 +32,10 @@ export class ResponseHandler {
   private async handleStreaming(
     response: Response,
     model: string,
-    conversationId: string
+    conversationId: string,
+    thinkingRequested: boolean
   ): Promise<Response> {
-    const s = transformKiroStream(response, model, conversationId)
+    const s = transformKiroStream(response, model, conversationId, thinkingRequested)
     return new Response(
       new ReadableStream({
         async start(c) {
@@ -53,9 +56,10 @@ export class ResponseHandler {
   private async handleSdkStreaming(
     sdkResponse: any,
     model: string,
-    conversationId: string
+    conversationId: string,
+    thinkingRequested: boolean
   ): Promise<Response> {
-    const s = transformSdkStream(sdkResponse, model, conversationId)
+    const s = transformSdkStream(sdkResponse, model, conversationId, thinkingRequested)
     return new Response(
       new ReadableStream({
         async start(c) {

@@ -65,13 +65,19 @@ export function mergeAccounts(
     if (existingAcc) {
       const hasPermanentError =
         isPermanentError(existingAcc.unhealthyReason) || isPermanentError(acc.unhealthyReason)
+      const incomingSync = acc.lastSync || 0
+      const existingSync = existingAcc.lastSync || 0
+      const useIncomingQuota = incomingSync > 0 && incomingSync > existingSync
 
       accountMap.set(acc.id, {
         ...existingAcc,
         ...acc,
         lastUsed: Math.max(existingAcc.lastUsed || 0, acc.lastUsed || 0),
-        usedCount: Math.max(existingAcc.usedCount || 0, acc.usedCount || 0),
-        limitCount: Math.max(existingAcc.limitCount || 0, acc.limitCount || 0),
+        usedCount: useIncomingQuota ? acc.usedCount : existingAcc.usedCount,
+        limitCount: useIncomingQuota ? acc.limitCount : existingAcc.limitCount,
+        subscriptionPlan: useIncomingQuota
+          ? acc.subscriptionPlan || existingAcc.subscriptionPlan
+          : existingAcc.subscriptionPlan || acc.subscriptionPlan,
         rateLimitResetTime: Math.max(
           existingAcc.rateLimitResetTime || 0,
           acc.rateLimitResetTime || 0

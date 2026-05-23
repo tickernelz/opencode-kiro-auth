@@ -44,7 +44,7 @@ export async function syncFromKiroCli() {
         const data = safeJsonParse(row.value)
         if (!data) continue
 
-        const isIdc = row.key.includes('odic')
+        const isIdc = row.key.includes('odic') || row.key.includes('oidc')
         const authMethod = isIdc ? 'idc' : 'desktop'
         const oidcRegion = normalizeRegion(data.region)
         let profileArn: string | undefined = data.profile_arn || data.profileArn
@@ -75,6 +75,7 @@ export async function syncFromKiroCli() {
 
         let usedCount = 0
         let limitCount = 0
+        let subscriptionPlan: string | undefined
         let email: string | undefined
         let usageOk = false
 
@@ -93,9 +94,10 @@ export async function syncFromKiroCli() {
           const u = await fetchUsageLimits(authForUsage)
           usedCount = u.usedCount || 0
           limitCount = u.limitCount || 0
+          subscriptionPlan = typeof u.subscriptionPlan === 'string' ? u.subscriptionPlan : undefined
+          usageOk = true
           if (typeof u.email === 'string' && u.email) {
             email = u.email
-            usageOk = true
           }
         } catch (e) {
           logger.warn('Kiro CLI sync: failed to fetch usage/email; falling back', {
@@ -132,8 +134,9 @@ export async function syncFromKiroCli() {
           existingById.is_healthy === 1 &&
           existingById.expires_at >= cliExpiresAt &&
           existingById.expires_at > Date.now()
-        )
-          continue
+        ) {
+          if (!usageOk) continue
+        }
 
         if (usageOk) {
           const placeholderEmail = makePlaceholderEmail(
@@ -194,6 +197,7 @@ export async function syncFromKiroCli() {
           failCount: 0,
           usedCount,
           limitCount,
+          subscriptionPlan,
           lastSync: Date.now()
         })
       }
