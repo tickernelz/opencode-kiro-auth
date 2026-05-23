@@ -63,7 +63,7 @@ describe('TUI usage data', () => {
     expect(summary.plan).toBe('KIRO PRO+')
     expect(summary.used).toBe(164.127)
     expect(summary.limit).toBe(2000)
-    expect(formatRequestQuota(summary)).toBe('Requests: 164.13 / 2000')
+    expect(formatRequestQuota(summary)).toBe('Credits: 164.13 / 2000')
   })
 
   test('keeps legacy databases without subscription_plan readable', () => {
@@ -82,7 +82,7 @@ describe('TUI usage data', () => {
 
     expect(summary.account?.email).toBe('legacy@example.com')
     expect(summary.plan).toBe('Q Developer')
-    expect(formatRequestQuota(summary)).toBe('Requests: 10.00 / 100')
+    expect(formatRequestQuota(summary)).toBe('Credits: 10.00 / 100')
   })
 
   test('uses the first healthy account for sidebar usage', () => {
@@ -124,7 +124,7 @@ describe('TUI usage data', () => {
 
     expect(summary.account?.email).toBe('good@example.com')
     expect(summary.plan).toBe('KIRO PRO+')
-    expect(formatRequestQuota(summary)).toBe('Requests: 20.00 / 100')
+    expect(formatRequestQuota(summary)).toBe('Credits: 20.00 / 100')
   })
 
   test('formats request quota without a limit', () => {
@@ -144,7 +144,7 @@ describe('TUI usage data', () => {
       ]
     })
 
-    expect(formatRequestQuota(summary)).toBe('Requests: 42.00')
+    expect(formatRequestQuota(summary)).toBe('Credits: 42.00')
   })
 
   test('detects whether the sidebar belongs to a Kiro session', () => {

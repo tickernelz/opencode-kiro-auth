@@ -67,7 +67,7 @@ The sidebar intentionally renders only:
 
 - `Kiro`
 - `Plan: <plan>`
-- `Requests: <used.toFixed(2)> / <limit>`
+- `Credits: <used.toFixed(2)> / <limit>`
 
 The panel is hidden for sessions whose model-bearing messages are not from the `kiro`
 provider. Empty sessions fall back to the configured default model.
@@ -93,5 +93,5 @@ appears in the generated file.
    ```
 
 5. Confirm the sidebar includes `Kiro`, `Plan: <plan>`, and
-   `Requests: <used.toFixed(2)> / <limit>`.
+   `Credits: <used.toFixed(2)> / <limit>`.
 6. Confirm the home or session prompt does not show a Kiro quota badge.

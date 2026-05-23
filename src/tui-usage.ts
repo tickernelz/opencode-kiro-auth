@@ -116,7 +116,7 @@ export function summarizeUsage(snapshot: UsageSnapshot): UsageSummary {
 }
 
 export function formatRequestQuota(summary: UsageSummary): string {
-  return `Requests: ${formatUsageRatio(summary.used, summary.limit)}`
+  return `Credits: ${formatUsageRatio(summary.used, summary.limit)}`
 }
 
 export function isKiroProviderID(providerID: string | undefined): boolean {
