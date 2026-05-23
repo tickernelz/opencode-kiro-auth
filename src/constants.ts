@@ -62,9 +62,7 @@ const DEFAULT_OUTPUT = 64000
 export const THINKING_BUDGET_BY_EFFORT = {
   low: 8192,
   medium: 16384,
-  high: 32768,
-  max: 32768,
-  xhigh: 49152
+  high: 32768
 } as const
 
 export interface KiroModelDefinition {
@@ -117,6 +115,17 @@ export const KIRO_MODEL_CATALOG = {
     reasoning: true
   }),
 
+  'claude-opus-4.5': model({
+    name: 'Claude Opus 4.5 (2.2x)',
+    apiModelId: 'claude-opus-4.5',
+    context: STANDARD_CONTEXT,
+    output: DEFAULT_OUTPUT,
+    input: TEXT_IMAGE_PDF,
+    outputModalities: TEXT_OUTPUT,
+    costMultiplier: '2.2x',
+    reasoning: true
+  }),
+
   'claude-sonnet-4.6': model({
     name: 'Claude Sonnet 4.6 (1.3x)',
     apiModelId: 'claude-sonnet-4.6',
@@ -129,15 +138,6 @@ export const KIRO_MODEL_CATALOG = {
     reasoning: true
   }),
 
-  'claude-opus-4.5': model({
-    name: 'Claude Opus 4.5 (2.2x)',
-    apiModelId: 'claude-opus-4.5',
-    context: STANDARD_CONTEXT,
-    output: DEFAULT_OUTPUT,
-    input: TEXT_IMAGE_PDF,
-    outputModalities: TEXT_OUTPUT,
-    costMultiplier: '2.2x'
-  }),
   'claude-sonnet-4.5': model({
     name: 'Claude Sonnet 4.5 (1.3x)',
     apiModelId: 'claude-sonnet-4.5',
@@ -145,8 +145,10 @@ export const KIRO_MODEL_CATALOG = {
     output: DEFAULT_OUTPUT,
     input: TEXT_IMAGE_PDF,
     outputModalities: TEXT_OUTPUT,
-    costMultiplier: '1.3x'
+    costMultiplier: '1.3x',
+    reasoning: true
   }),
+
   'claude-sonnet-4': model({
     name: 'Claude Sonnet 4 (1.3x)',
     apiModelId: 'claude-sonnet-4',
@@ -157,6 +159,7 @@ export const KIRO_MODEL_CATALOG = {
     costMultiplier: '1.3x',
     reasoning: true
   }),
+
   'claude-haiku-4.5': model({
     name: 'Claude Haiku 4.5 (0.4x)',
     apiModelId: 'claude-haiku-4.5',
@@ -178,6 +181,16 @@ export const KIRO_MODEL_CATALOG = {
     costMultiplier: '0.25x',
     releaseDate: '2026-02-10'
   }),
+  'minimax-m2.5': model({
+    name: 'MiniMax M2.5 (0.25x)',
+    apiModelId: 'minimax-m2.5',
+    context: STANDARD_CONTEXT,
+    output: DEFAULT_OUTPUT,
+    input: TEXT_ONLY,
+    outputModalities: TEXT_OUTPUT,
+    costMultiplier: '0.25x',
+    releaseDate: '2026-03-18'
+  }),
   'glm-5': model({
     name: 'GLM-5 (0.5x)',
     apiModelId: 'glm-5',
@@ -188,16 +201,6 @@ export const KIRO_MODEL_CATALOG = {
     costMultiplier: '0.5x',
     releaseDate: '2026-03-31',
     reasoning: true
-  }),
-  'minimax-m2.5': model({
-    name: 'MiniMax M2.5 (0.25x)',
-    apiModelId: 'minimax-m2.5',
-    context: STANDARD_CONTEXT,
-    output: DEFAULT_OUTPUT,
-    input: TEXT_ONLY,
-    outputModalities: TEXT_OUTPUT,
-    costMultiplier: '0.25x',
-    releaseDate: '2026-03-18'
   }),
   'minimax-m2.1': model({
     name: 'MiniMax M2.1 (0.15x)',
@@ -232,8 +235,8 @@ export const LEGACY_MODEL_MAPPING: Record<string, string> = {
 const HYPHENATED_CLAUDE_ALIASES = [
   'claude-opus-4.7',
   'claude-opus-4.6',
-  'claude-sonnet-4.6',
   'claude-opus-4.5',
+  'claude-sonnet-4.6',
   'claude-sonnet-4.5',
   'claude-haiku-4.5'
 ] as const

@@ -24,7 +24,7 @@ describe('resolveKiroModel', () => {
     expect(resolveKiroModel('claude-opus-4-7-thinking')).toBe('claude-opus-4.7')
     expect(resolveKiroModel('claude-haiku-4.5')).toBe('claude-haiku-4.5')
     expect(resolveKiroModel('claude-haiku-4.5-thinking')).toBe('claude-haiku-4.5')
-    expect(resolveKiroModel('claude-sonnet-4.6-1m')).toBe('claude-sonnet-4.6')
+    expect(resolveKiroModel('claude-opus-4-5')).toBe('claude-opus-4.5')
   })
 
   test('rejects removed qwen3-coder-480b slug', () => {
@@ -42,7 +42,7 @@ describe('resolveKiroModel', () => {
     expect(SUPPORTED_MODELS).toContain('glm-5')
   })
 
-  test('rejects non-official Sonnet 4.0 alias', () => {
+  test('rejects docs-only Sonnet 4.0 label as a model id', () => {
     expect(() => resolveKiroModel('claude-sonnet-4.0')).toThrow(
       'Unsupported model: claude-sonnet-4.0'
     )
