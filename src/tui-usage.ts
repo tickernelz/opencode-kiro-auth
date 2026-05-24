@@ -30,6 +30,12 @@ export type UsageSummary = {
   limit: number
 }
 
+export type TuiDisplayOptions = {
+  showAccountEmail: boolean
+  showPlan: boolean
+  showCredits: boolean
+}
+
 export type SessionProviderMessage = {
   providerID?: string
   model?: {
@@ -117,6 +123,14 @@ export function summarizeUsage(snapshot: UsageSnapshot): UsageSummary {
 
 export function formatRequestQuota(summary: UsageSummary): string {
   return `Credits: ${formatUsageRatio(summary.used, summary.limit)}`
+}
+
+export function resolveTuiDisplayOptions(options: Record<string, unknown> = {}): TuiDisplayOptions {
+  return {
+    showAccountEmail: options.show_account_email === true,
+    showPlan: options.show_plan !== false,
+    showCredits: options.show_credits !== false
+  }
 }
 
 export function isKiroProviderID(providerID: string | undefined): boolean {

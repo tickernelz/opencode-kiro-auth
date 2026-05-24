@@ -7,6 +7,7 @@ import {
   formatRequestQuota,
   getSessionProviderID,
   readUsageSnapshot,
+  resolveTuiDisplayOptions,
   shouldShowKiroUsage,
   summarizeUsage
 } from '../tui-usage.js'
@@ -161,5 +162,25 @@ describe('TUI usage data', () => {
     const snapshot = readUsageSnapshot(join(tempDbPath(), 'missing.db'))
 
     expect(snapshot).toEqual({ accounts: [] })
+  })
+
+  test('resolves TUI display options with compact defaults', () => {
+    expect(resolveTuiDisplayOptions()).toEqual({
+      showAccountEmail: false,
+      showPlan: true,
+      showCredits: true
+    })
+
+    expect(
+      resolveTuiDisplayOptions({
+        show_account_email: true,
+        show_plan: false,
+        show_credits: false
+      })
+    ).toEqual({
+      showAccountEmail: true,
+      showPlan: false,
+      showCredits: false
+    })
   })
 })

@@ -129,11 +129,33 @@ The package exposes a separate TUI plugin at `@zhafron/opencode-kiro-auth/tui`.
 When the package is listed in `tui.jsonc`, OpenCode resolves that subpath automatically.
 
 The TUI plugin reads `~/.config/opencode/kiro.db` in readonly mode, refreshes every 15
-seconds, and shows only:
+seconds, and shows:
 
 - `Kiro`
+- `Account: <email>`, disabled by default
 - `Plan: <plan>`, for example `Plan: KIRO PRO+`
 - `Credits: <used> / <limit>`, with used credits shown to two decimals
+
+Optional display fields can be configured in `tui.jsonc`:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "plugin": [
+    [
+      "@zhafron/opencode-kiro-auth",
+      {
+        "show_account_email": true,
+        "show_plan": true,
+        "show_credits": true
+      }
+    ]
+  ]
+}
+```
+
+`show_account_email` defaults to `false`; `show_plan` and `show_credits` default to
+`true`.
 
 OpenCode only shows the session sidebar automatically when the terminal is wider than
 120 columns. On narrower terminals, use the sidebar toggle from the command palette.
