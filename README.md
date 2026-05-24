@@ -138,6 +138,11 @@ seconds, and shows only:
 OpenCode only shows the session sidebar automatically when the terminal is wider than
 120 columns. On narrower terminals, use the sidebar toggle from the command palette.
 The Kiro section is hidden for sessions whose active message provider is not `kiro`.
+If `kiro.db` contains multiple healthy Kiro credential rows, the panel shows the latest
+healthy row by `last_used`. With a single logged-in account, this matches the active
+account. OpenCode's TUI plugin API exposes session provider metadata, but not the exact
+Kiro account selected by the server plugin for the current request, so the displayed
+quota is best-effort only when multiple healthy credentials are stored.
 The TUI does not read access tokens, refresh tokens, client secrets, or OIDC
 credentials.
 

@@ -59,6 +59,27 @@ describe('thinking stream transform', () => {
     expect(textFrom(deltas)).toBe('Answer')
   })
 
+  test('closes thinking before immediate answer text', async () => {
+    const deltas = await collectDeltas(['<thinking>reason</thinking>Answer'], true)
+
+    expect(reasoningFrom(deltas)).toBe('reason')
+    expect(textFrom(deltas)).toBe('Answer')
+  })
+
+  test('handles split thinking end tag before immediate answer text', async () => {
+    const deltas = await collectDeltas(['<thinking>Plan', '</think', 'ing>Answer'], true)
+
+    expect(reasoningFrom(deltas)).toBe('Plan')
+    expect(textFrom(deltas)).toBe('Answer')
+  })
+
+  test('strips leading CRLF after a thinking block', async () => {
+    const deltas = await collectDeltas(['<thinking>Plan</thinking>\r\n\r\nAnswer'], true)
+
+    expect(reasoningFrom(deltas)).toBe('Plan')
+    expect(textFrom(deltas)).toBe('Answer')
+  })
+
   test('keeps normal model text streaming without parsing thinking tags', async () => {
     const deltas = await collectDeltas(['pre <thinking>not reasoning</thinking> answer'], false)
 
@@ -73,6 +94,16 @@ describe('thinking stream transform', () => {
     )
 
     expect(reasoningFrom(deltas)).toBe('quoted `</thinking>` still thinking')
+    expect(textFrom(deltas)).toBe('Done')
+  })
+
+  test('does not close thinking on code-fenced literal end tags', async () => {
+    const deltas = await collectDeltas(
+      ['<thinking>\n```text\n</thinking>\n```\nstill thinking</thinking>Done'],
+      true
+    )
+
+    expect(reasoningFrom(deltas)).toBe('```text\n</thinking>\n```\nstill thinking')
     expect(textFrom(deltas)).toBe('Done')
   })
 

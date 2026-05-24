@@ -139,10 +139,6 @@ function isInsideCodeFence(text: string, index: number): boolean {
   return fenceCount % 2 === 1
 }
 
-function isWhitespaceOnly(text: string): boolean {
-  return text.trim().length === 0
-}
-
 export function findRealTag(buffer: string, tag: string, startIndex = 0): number {
   let pos = Math.max(0, startIndex)
 
@@ -163,18 +159,7 @@ export function findRealTag(buffer: string, tag: string, startIndex = 0): number
 export function findRealThinkingEndTag(
   buffer: string,
   tag: string,
-  allowBufferEnd = false
+  _allowBufferEnd = false
 ): number {
-  let searchStart = 0
-
-  while (true) {
-    const pos = findRealTag(buffer, tag, searchStart)
-    if (pos === -1) return -1
-
-    const after = buffer.slice(pos + tag.length)
-    if (after.startsWith('\n\n') || after.startsWith('\r\n\r\n')) return pos
-    if (allowBufferEnd && isWhitespaceOnly(after)) return pos
-
-    searchStart = pos + 1
-  }
+  return findRealTag(buffer, tag)
 }

@@ -68,10 +68,17 @@ export function mergeAccounts(
       const incomingSync = acc.lastSync || 0
       const existingSync = existingAcc.lastSync || 0
       const useIncomingQuota = incomingSync > 0 && incomingSync > existingSync
+      const incomingExpires = acc.expiresAt || 0
+      const existingExpires = existingAcc.expiresAt || 0
+      const preserveExistingCredentials =
+        existingAcc.isHealthy && existingExpires > Date.now() && existingExpires >= incomingExpires
 
       accountMap.set(acc.id, {
         ...existingAcc,
         ...acc,
+        refreshToken: preserveExistingCredentials ? existingAcc.refreshToken : acc.refreshToken,
+        accessToken: preserveExistingCredentials ? existingAcc.accessToken : acc.accessToken,
+        expiresAt: preserveExistingCredentials ? existingAcc.expiresAt : acc.expiresAt,
         lastUsed: Math.max(existingAcc.lastUsed || 0, acc.lastUsed || 0),
         usedCount: useIncomingQuota ? acc.usedCount : existingAcc.usedCount,
         limitCount: useIncomingQuota ? acc.limitCount : existingAcc.limitCount,
