@@ -117,7 +117,7 @@ export class RequestHandler {
 
       const sdkPrep = this.prepareSdkRequest(init?.body, model, auth, think, budget, showToast)
 
-      let sdkEndpointMode = this.getSdkEndpointModes()[0] || 'sdk-default'
+      let sdkEndpointMode = this.getSdkEndpointModes()[0] || 'kiro-runtime'
       const apiTimestamp = this.config.enable_log_api_request ? logger.getTimestamp() : null
       if (apiTimestamp) {
         this.logSdkRequest(sdkPrep, acc, apiTimestamp, sdkEndpointMode)
@@ -229,7 +229,7 @@ export class RequestHandler {
     let lastError: any
 
     for (let i = 0; i < endpointModes.length; i++) {
-      const endpointMode = endpointModes[i] || 'sdk-default'
+      const endpointMode = endpointModes[i] || 'kiro-runtime'
       try {
         const client = createSdkClient(auth, prep.region, endpointMode)
         const command = new GenerateAssistantResponseCommand({
@@ -261,9 +261,11 @@ export class RequestHandler {
   }
 
   private getSdkEndpointModes(): ResolvedSdkEndpointMode[] {
+    if (this.config.sdk_endpoint_mode === 'kiro-runtime') return ['kiro-runtime']
     if (this.config.sdk_endpoint_mode === 'legacy-q') return ['legacy-q']
-    if (this.config.sdk_endpoint_mode === 'sdk-default') return ['sdk-default']
-    return ['sdk-default', 'legacy-q']
+    // Kiro documents q.<region>.amazonaws.com as legacy but still required until
+    // deprecation completes: https://kiro.dev/docs/cli/privacy-and-security/firewalls/
+    return ['kiro-runtime', 'legacy-q']
   }
 
   private shouldFallbackSdkEndpoint(error: any): boolean {
@@ -271,10 +273,10 @@ export class RequestHandler {
   }
 
   private formatSdkEndpointUrl(region: string, endpointMode: ResolvedSdkEndpointMode): string {
-    if (endpointMode === 'legacy-q') {
-      return `https://q.${region}.amazonaws.com/generateAssistantResponse`
+    if (endpointMode === 'kiro-runtime') {
+      return `https://runtime.${region}.kiro.dev/generateAssistantResponse`
     }
-    return `https://amazoncodewhispererstreamingservice.${region}.amazonaws.com/generateAssistantResponse`
+    return `https://q.${region}.amazonaws.com/generateAssistantResponse`
   }
 
   private logSdkRequest(

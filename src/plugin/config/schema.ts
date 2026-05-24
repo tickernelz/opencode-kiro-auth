@@ -3,7 +3,7 @@ import { z } from 'zod'
 export const AccountSelectionStrategySchema = z.enum(['sticky', 'round-robin', 'lowest-usage'])
 export type AccountSelectionStrategy = z.infer<typeof AccountSelectionStrategySchema>
 
-export const SdkEndpointModeSchema = z.enum(['auto', 'sdk-default', 'legacy-q'])
+export const SdkEndpointModeSchema = z.enum(['auto', 'kiro-runtime', 'legacy-q'])
 export type SdkEndpointMode = z.infer<typeof SdkEndpointModeSchema>
 
 const RegionStringSchema = z

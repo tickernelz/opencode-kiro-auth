@@ -120,7 +120,7 @@ Environment overrides:
 - `KIRO_AUTO_SYNC_KIRO_CLI`
 - `KIRO_ACCOUNT_SELECTION_STRATEGY`
 - `KIRO_USAGE_TRACKING_ENABLED`
-- `KIRO_SDK_ENDPOINT_MODE` (`auto`, `sdk-default`, or `legacy-q`)
+- `KIRO_SDK_ENDPOINT_MODE` (`auto`, `kiro-runtime`, or `legacy-q`)
 - `KIRO_ENABLE_LOG_API_REQUEST`
 
 ## TUI Usage Panel

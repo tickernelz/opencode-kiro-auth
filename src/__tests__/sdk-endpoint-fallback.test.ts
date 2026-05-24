@@ -2,11 +2,11 @@ import { describe, expect, test } from 'bun:test'
 import { shouldFallbackSdkEndpointError } from '../core/request/sdk-endpoint-fallback.js'
 
 describe('SDK endpoint fallback', () => {
-  test('falls back for new SDK endpoint socket failures', () => {
+  test('falls back for Kiro runtime endpoint socket failures', () => {
     expect(
       shouldFallbackSdkEndpointError({
         code: 'FailedToOpenSocket',
-        path: 'https://amazoncodewhispererstreamingservice.us-east-1.amazonaws.com/generateAssistantResponse'
+        path: 'https://runtime.us-east-1.kiro.dev/generateAssistantResponse'
       })
     ).toBe(true)
   })
