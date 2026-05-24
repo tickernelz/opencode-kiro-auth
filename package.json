@@ -20,7 +20,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "bun run clean && tsc -p tsconfig.build.json && node scripts/fix-esm-imports.mjs && bun scripts/build-tui.ts",
     "check": "bun run typecheck && bun test && bun run build",
-    "format": "prettier --write 'src/**/*.{ts,tsx}' 'scripts/**/*.ts' 'README.md' 'docs/**/*.md' '.codex/skills/**/*.md' 'package.json'",
+    "format": "prettier --write 'src/**/*.{ts,tsx}' 'scripts/**/*.ts' 'README.md' 'package.json'",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "prepare": "husky"

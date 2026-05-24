@@ -48,25 +48,14 @@ into your OpenCode config.
 
 ## Models
 
-The default catalog includes:
+The plugin injects the default Kiro model catalog automatically. Do not add model
+definitions to your OpenCode config unless you are intentionally overriding local
+display metadata.
 
-- `auto`
-- `claude-opus-4.7`
-- `claude-opus-4.6`
-- `claude-sonnet-4.6`
-- `claude-opus-4.5`
-- `claude-sonnet-4.5`
-- `claude-sonnet-4`
-- `claude-haiku-4.5`
-- `deepseek-3.2`
-- `glm-5`
-- `minimax-m2.5`
-- `minimax-m2.1`
-- `qwen3-coder-next`
-
-Compatibility aliases for older local configs are retained where possible, including
-historical hyphenated, `*-thinking`, and `*-1m` aliases. The provider only lists the
-official Kiro CLI model slugs by default.
+For compatibility with older configs, the request layer still converts historical
+aliases where possible, including dotted Claude IDs, hyphenated Claude IDs,
+`*-thinking` IDs, and older `*-1m` IDs. These fallbacks are only for existing configs;
+new installs should use the injected provider catalog.
 
 ## Authentication
 
@@ -139,14 +128,18 @@ Environment overrides:
 The package exposes a separate TUI plugin at `@zhafron/opencode-kiro-auth/tui`.
 When the package is listed in `tui.jsonc`, OpenCode resolves that subpath automatically.
 
-The TUI plugin reads `~/.config/opencode/kiro.db`, refreshes every 15 seconds, and shows:
+The TUI plugin reads `~/.config/opencode/kiro.db` in readonly mode, refreshes every 15
+seconds, and shows only:
 
-- subscription plan, for example `KIRO PRO+`
-- request usage in `used / limit` form, with used requests shown to two decimals
+- `Kiro`
+- `Plan: <plan>`, for example `Plan: KIRO PRO+`
+- `Credits: <used> / <limit>`, with used credits shown to two decimals
 
 OpenCode only shows the session sidebar automatically when the terminal is wider than
 120 columns. On narrower terminals, use the sidebar toggle from the command palette.
 The Kiro section is hidden for sessions whose active message provider is not `kiro`.
+The TUI does not read access tokens, refresh tokens, client secrets, or OIDC
+credentials.
 
 If the panel is empty:
 
@@ -209,17 +202,4 @@ bun install
 bun run typecheck
 bun test
 bun run build
-```
-
-To test local changes in OpenCode's npm plugin cache:
-
-```bash
-bun run build
-scripts/opencode_plugin_hotswap.sh @zhafron/opencode-kiro-auth /home/user/github/opencode-kiro-auth
-```
-
-Restore the latest backup:
-
-```bash
-scripts/opencode_plugin_restore.sh @zhafron/opencode-kiro-auth
 ```
