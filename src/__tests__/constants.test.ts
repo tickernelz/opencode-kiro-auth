@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { isLongContextModel, SUPPORTED_MODELS } from '../constants.js'
+import { isLongContextModel, normalizeRegion, SUPPORTED_MODELS } from '../constants.js'
 
 describe('isLongContextModel', () => {
   test('returns true for all 1m model variants', () => {
@@ -22,5 +22,11 @@ describe('isLongContextModel', () => {
     expect(isLongContextModel('unknown-model')).toBe(false)
     expect(isLongContextModel('')).toBe(false)
     expect(isLongContextModel('claude-sonnet-4-6')).toBe(false)
+  })
+})
+
+describe('normalizeRegion', () => {
+  test('accepts configured AWS regions with the installed Zod enum shape', () => {
+    expect(normalizeRegion('us-west-2')).toBe('us-west-2')
   })
 })

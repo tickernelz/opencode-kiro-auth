@@ -1,7 +1,7 @@
 import { RegionSchema } from './plugin/config/schema'
 import type { KiroRegion } from './plugin/types'
 
-const VALID_REGIONS: readonly KiroRegion[] = Object.values(RegionSchema.Values)
+const VALID_REGIONS: readonly KiroRegion[] = RegionSchema.options
 
 export function isValidRegion(region: string): region is KiroRegion {
   return VALID_REGIONS.includes(region as KiroRegion)
@@ -50,8 +50,11 @@ export const KIRO_CONSTANTS = {
 }
 
 export const MODEL_MAPPING: Record<string, string> = {
+  // Claude Haiku
   'claude-haiku-4-5': 'claude-haiku-4.5',
   'claude-haiku-4-5-thinking': 'claude-haiku-4.5',
+  // Claude Sonnet
+  'claude-sonnet-4': 'claude-sonnet-4',
   'claude-sonnet-4-5': 'claude-sonnet-4.5',
   'claude-sonnet-4-5-thinking': 'claude-sonnet-4.5',
   'claude-sonnet-4-5-1m': 'claude-sonnet-4.5-1m',
@@ -60,6 +63,7 @@ export const MODEL_MAPPING: Record<string, string> = {
   'claude-sonnet-4-6-thinking': 'claude-sonnet-4.6',
   'claude-sonnet-4-6-1m': 'claude-sonnet-4.6-1m',
   'claude-sonnet-4-6-1m-thinking': 'claude-sonnet-4.6-1m',
+  // Claude Opus
   'claude-opus-4-5': 'claude-opus-4.5',
   'claude-opus-4-5-thinking': 'claude-opus-4.5',
   'claude-opus-4-6': 'claude-opus-4.6',
@@ -68,17 +72,20 @@ export const MODEL_MAPPING: Record<string, string> = {
   'claude-opus-4-6-1m-thinking': 'claude-opus-4.6-1m',
   'claude-opus-4-7': 'claude-opus-4.7',
   'claude-opus-4-7-thinking': 'claude-opus-4.7',
-  'claude-sonnet-4': 'claude-sonnet-4',
+  // Auto
+  auto: 'auto',
+  // Open weight models
+  'deepseek-3.2': 'deepseek-3.2',
+  'glm-5': 'glm-5',
+  'minimax-m2.5': 'minimax-m2.5',
+  'minimax-m2.1': 'minimax-m2.1',
+  'qwen3-coder-next': 'qwen3-coder-next',
+  // Legacy / internal mappings kept for backwards compatibility
   'claude-3-7-sonnet': 'CLAUDE_3_7_SONNET_20250219_V1_0',
   'nova-swe': 'AGI_NOVA_SWE_V1_5',
   'gpt-oss-120b': 'OPENAI_GPT_OSS_120B_1_0',
   'minimax-m2': 'MINIMAX_MINIMAX_M2',
-  'kimi-k2-thinking': 'MOONSHOT_KIMI_K2_THINKING',
-  auto: 'auto',
-  'deepseek-3.2': 'deepseek-3.2',
-  'minimax-m2.5': 'minimax-m2.5',
-  'minimax-m2.1': 'minimax-m2.1',
-  'qwen3-coder-next': 'qwen3-coder-next'
+  'kimi-k2-thinking': 'MOONSHOT_KIMI_K2_THINKING'
 }
 
 export const SUPPORTED_MODELS = Object.keys(MODEL_MAPPING)

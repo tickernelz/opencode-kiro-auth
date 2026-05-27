@@ -1,6 +1,6 @@
 {
   "name": "@zhafron/opencode-kiro-auth",
-  "version": "1.10.1",
+  "version": "1.11.0",
   "description": "OpenCode plugin for AWS Kiro (CodeWhisperer) providing access to Claude models",
   "type": "module",
   "main": "dist/index.js",
@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "@aws/codewhisperer-streaming-client": "^1.0.34",
-    "@opencode-ai/plugin": "^1.14.39",
+    "@opencode-ai/plugin": "^1.15.11",
     "proper-lockfile": "^4.1.2",
     "zod": "^3.24.0"
   },

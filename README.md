@@ -51,12 +51,12 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
         },
         "claude-sonnet-4-6": {
           "name": "Claude Sonnet 4.6",
-          "limit": { "context": 200000, "output": 64000 },
+          "limit": { "context": 1000000, "output": 64000 },
           "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
         },
         "claude-sonnet-4-6-thinking": {
           "name": "Claude Sonnet 4.6 Thinking",
-          "limit": { "context": 200000, "output": 64000 },
+          "limit": { "context": 1000000, "output": 64000 },
           "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
           "variants": {
             "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
@@ -86,12 +86,12 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
         },
         "claude-opus-4-6": {
           "name": "Claude Opus 4.6",
-          "limit": { "context": 200000, "output": 64000 },
+          "limit": { "context": 1000000, "output": 64000 },
           "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
         },
         "claude-opus-4-6-thinking": {
           "name": "Claude Opus 4.6 Thinking",
-          "limit": { "context": 200000, "output": 64000 },
+          "limit": { "context": 1000000, "output": 64000 },
           "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
           "variants": {
             "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
@@ -106,6 +106,21 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
         },
         "claude-opus-4-6-1m-thinking": {
           "name": "Claude Opus 4.6 (1M Context) Thinking",
+          "limit": { "context": 1000000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
+            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
+            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+          }
+        },
+        "claude-opus-4-7": {
+          "name": "Claude Opus 4.7",
+          "limit": { "context": 1000000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "claude-opus-4-7-thinking": {
+          "name": "Claude Opus 4.7 Thinking",
           "limit": { "context": 1000000, "output": 64000 },
           "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
           "variants": {
@@ -135,11 +150,27 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
           }
         },
         "auto": { "name": "Auto (1.0x)" },
-        "claude-sonnet-4": { "name": "Claude Sonnet 4.0 (1.3x)", "limit": { "context": 200000, "output": 64000 } },
-        "deepseek-3.2": { "name": "DeepSeek 3.2 (0.25x)", "limit": { "context": 128000, "output": 64000 } },
-        "minimax-m2.5": { "name": "MiniMax 2.5 (0.25x)", "limit": { "context": 200000, "output": 64000 } },
-        "minimax-m2.1": { "name": "MiniMax 2.1 (0.15x)", "limit": { "context": 200000, "output": 64000 } },
-        "qwen3-coder-next": { "name": "Qwen3 Coder Next (0.05x)", "limit": { "context": 256000, "output": 64000 } }
+        "claude-sonnet-4": {
+          "name": "Claude Sonnet 4.0 (1.3x)",
+          "limit": { "context": 200000, "output": 64000 }
+        },
+        "deepseek-3.2": {
+          "name": "DeepSeek 3.2 (0.25x)",
+          "limit": { "context": 128000, "output": 64000 }
+        },
+        "glm-5": { "name": "GLM-5 (0.5x)", "limit": { "context": 200000, "output": 64000 } },
+        "minimax-m2.5": {
+          "name": "MiniMax 2.5 (0.25x)",
+          "limit": { "context": 200000, "output": 64000 }
+        },
+        "minimax-m2.1": {
+          "name": "MiniMax 2.1 (0.15x)",
+          "limit": { "context": 200000, "output": 64000 }
+        },
+        "qwen3-coder-next": {
+          "name": "Qwen3 Coder Next (0.05x)",
+          "limit": { "context": 256000, "output": 64000 }
+        }
       }
     }
   }
@@ -150,7 +181,9 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
 
 1. **Authentication via Kiro CLI (Recommended)**:
    - Perform login directly in your terminal using `kiro-cli login`.
-   - The plugin will automatically detect and import your session on startup.
+   - The plugin automatically bootstraps a minimal `kiro` placeholder in
+     OpenCode's `auth.json` when it detects the Kiro CLI database, then imports
+     and synchronizes your active session on startup.
    - For AWS IAM Identity Center (SSO/IDC), the plugin imports both the token and device
      registration (OIDC client credentials) from the `kiro-cli` database.
 2. **Direct Authentication**:
@@ -177,30 +210,19 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
 
 ## Local plugin development
 
-OpenCode installs plugins into a cache directory (typically
-`~/.cache/opencode/node_modules`).
+The simplest way to test local changes is to point OpenCode directly at your local repo
+path in `opencode.json` or `opencode.jsonc`:
 
-The simplest way to test local changes (without publishing to npm) is to build this repo
-and hot-swap the cached plugin `dist/` folder:
-
-1. Build this repo: `bun run build` (or `npm run build`)
-2. Hot-swap `dist/` (creates a timestamped backup):
-
-```bash
-PLUGIN_DIR="$HOME/.cache/opencode/node_modules/@zhafron/opencode-kiro-auth"
-TS=$(date +%Y%m%d-%H%M%S)
-cp -a "$PLUGIN_DIR/dist" "$PLUGIN_DIR/dist.bak.$TS"
-rm -rf "$PLUGIN_DIR/dist"
-cp -a "/absolute/path/to/opencode-kiro-auth/dist" "$PLUGIN_DIR/dist"
-echo "Backup at: $PLUGIN_DIR/dist.bak.$TS"
+```json
+{
+  "plugin": ["/path/to/opencode-kiro-auth"]
+}
 ```
 
-Revert:
+Then build and restart OpenCode to pick up changes:
 
 ```bash
-PLUGIN_DIR="$HOME/.cache/opencode/node_modules/@zhafron/opencode-kiro-auth"
-rm -rf "$PLUGIN_DIR/dist"
-mv "$PLUGIN_DIR/dist.bak.YYYYMMDD-HHMMSS" "$PLUGIN_DIR/dist"
+npm run build
 ```
 
 ## Troubleshooting
@@ -237,48 +259,23 @@ Note for IDC/SSO (ODIC): the plugin may temporarily create an account with a pla
 email if it cannot fetch the real email during sync (e.g. offline).
 It will replace it with the real email once usage/email lookup succeeds.
 
-### Kiro CLI (Google/GitHub OAuth) users: plugin sync never runs
+### Kiro CLI (Google/GitHub OAuth) users: plugin sync does not start
 
 If you authenticated via `kiro-cli login` using Google or GitHub OAuth (not AWS Builder
-ID or IAM Identity Center), the plugin's sync may never trigger.
-This happens because OpenCode requires a kiro entry in `auth.json` before making API
-requests, but the plugin loader only runs when a request is made.
+ID or IAM Identity Center), OpenCode still needs a stored `kiro` auth entry before it
+will call the plugin loader.
 
-**Workaround:** Add a minimal placeholder entry to `~/.local/share/opencode/auth.json`:
+The plugin now creates that minimal placeholder automatically when it detects the local
+Kiro CLI database. Restart OpenCode after `kiro-cli login`; the loader should then run
+and sync your actual tokens into `kiro.db`. The placeholder values are not used for API
+calls.
 
-```json
-{
-  "kiro": {
-    "type": "api",
-    "key": "placeholder"
-  }
-}
-```
-
-After adding this, OpenCode will treat the provider as connected, trigger the plugin
-loader, and the kiro-cli sync will populate `kiro.db` with your actual tokens.
-The placeholder values are not used for API calls.
+If bootstrap is skipped because `auth.json` is malformed, fix the JSON first. The plugin
+will not overwrite malformed auth files because they may contain other provider
+credentials.
 
 **Important:** Ensure `auto_sync_kiro_cli` is `true` in `~/.config/opencode/kiro.json`
-and that `kiro-cli login` succeeds before applying this workaround.
-
-### Error: ERR_INVALID_URL
-
-`TypeError [ERR_INVALID_URL]: "undefined/chat/completions" cannot be parsed as a URL`
-
-If this happens, check your auth.json in .local/share/opencode.
-example:
-
-```json
-{
-  "kiro": {
-    "type": "api",
-    "key": "whatever"
-  }
-}
-```
-
-## Configuration
+and that `kiro-cli login` succeeds.
 
 The plugin supports extensive configuration options.
 Edit `~/.config/opencode/kiro.json`:
