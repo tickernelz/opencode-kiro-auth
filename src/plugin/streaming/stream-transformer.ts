@@ -105,8 +105,10 @@ export async function* transformKiroStream(
       yield convertToOpenAI(ev, conversationId, model)
     }
 
-    for (const ev of stopBlock(streamState.textBlockIndex, streamState))
-      yield convertToOpenAI(ev, conversationId, model)
+    for (const ev of stopBlock(streamState.textBlockIndex, streamState)) {
+      const _c = convertToOpenAI(ev, conversationId, model)
+      if (_c !== null) yield _c
+    }
 
     const bracketToolCalls = parseBracketToolCalls(totalContent)
     if (bracketToolCalls.length > 0) {
@@ -127,20 +129,23 @@ export async function* transformKiroStream(
 
         const blockIndex = baseIndex + i
 
-        yield convertToOpenAI(
-          {
-            type: 'content_block_start',
-            index: blockIndex,
-            content_block: {
-              type: 'tool_use',
-              id: tc.toolUseId,
-              name: tc.name,
-              input: {}
-            }
-          },
-          conversationId,
-          model
-        )
+        {
+          const _c = convertToOpenAI(
+            {
+              type: 'content_block_start',
+              index: blockIndex,
+              content_block: {
+                type: 'tool_use',
+                id: tc.toolUseId,
+                name: tc.name,
+                input: {}
+              }
+            },
+            conversationId,
+            model
+          )
+          if (_c !== null) yield _c
+        }
 
         let inputJson: string
         try {
@@ -150,24 +155,30 @@ export async function* transformKiroStream(
           inputJson = tc.input
         }
 
-        yield convertToOpenAI(
-          {
-            type: 'content_block_delta',
-            index: blockIndex,
-            delta: {
-              type: 'input_json_delta',
-              partial_json: inputJson
-            }
-          },
-          conversationId,
-          model
-        )
+        {
+          const _c = convertToOpenAI(
+            {
+              type: 'content_block_delta',
+              index: blockIndex,
+              delta: {
+                type: 'input_json_delta',
+                partial_json: inputJson
+              }
+            },
+            conversationId,
+            model
+          )
+          if (_c !== null) yield _c
+        }
 
-        yield convertToOpenAI(
-          { type: 'content_block_stop', index: blockIndex },
-          conversationId,
-          model
-        )
+        {
+          const _c = convertToOpenAI(
+            { type: 'content_block_stop', index: blockIndex },
+            conversationId,
+            model
+          )
+          if (_c !== null) yield _c
+        }
       }
     }
 
@@ -179,22 +190,28 @@ export async function* transformKiroStream(
       inputTokens = Math.max(0, totalTokens - outputTokens)
     }
 
-    yield convertToOpenAI(
-      {
-        type: 'message_delta',
-        delta: { stop_reason: toolCalls.length > 0 ? 'tool_use' : 'end_turn' },
-        usage: {
-          input_tokens: inputTokens,
-          output_tokens: outputTokens,
-          cache_creation_input_tokens: 0,
-          cache_read_input_tokens: 0
-        }
-      },
-      conversationId,
-      model
-    )
+    {
+      const _c = convertToOpenAI(
+        {
+          type: 'message_delta',
+          delta: { stop_reason: toolCalls.length > 0 ? 'tool_use' : 'end_turn' },
+          usage: {
+            input_tokens: inputTokens,
+            output_tokens: outputTokens,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0
+          }
+        },
+        conversationId,
+        model
+      )
+      if (_c !== null) yield _c
+    }
 
-    yield convertToOpenAI({ type: 'message_stop' }, conversationId, model)
+    {
+      const _c = convertToOpenAI({ type: 'message_stop' }, conversationId, model)
+      if (_c !== null) yield _c
+    }
   } finally {
     reader.releaseLock()
   }

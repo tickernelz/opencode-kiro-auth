@@ -9,6 +9,7 @@ import { RequestHandler } from './core/request/request-handler.js'
 import { AccountCache } from './infrastructure/database/account-cache.js'
 import { AccountRepository } from './infrastructure/database/account-repository.js'
 import { AccountManager } from './plugin/accounts.js'
+import { bootstrapAuthIfNeeded } from './plugin/auth-bootstrap.js'
 import { loadConfig } from './plugin/config/index.js'
 import { ensureOpenCodeAuthPlaceholder } from './plugin/opencode-auth.js'
 
@@ -53,6 +54,10 @@ export const createKiroPlugin =
 
     return {
       config: async (input: any) => {
+        // Ensure there's an auth entry so OpenCode calls the loader on startup.
+        // This is a no-op if the entry already exists.
+        bootstrapAuthIfNeeded(id)
+
         if (!input.provider) input.provider = {}
         if (
           id === KIRO_PROVIDER_ID &&
@@ -74,10 +79,10 @@ export const createKiroPlugin =
 
           return {
             apiKey: '',
-            baseURL: KIRO_CONSTANTS.BASE_URL.replace('/generateAssistantResponse', '').replace(
-              '{{region}}',
-              config.default_region || 'us-east-1'
-            ),
+            // Provide baseURL explicitly so the @ai-sdk/openai-compatible provider
+            // always has a valid URL. The custom fetch below intercepts all Kiro
+            // API calls, so this value is only used for URL construction.
+            baseURL,
             fetch: (input: any, init?: any) => requestHandler.handle(input, init, showToast)
           }
         },
@@ -95,7 +100,11 @@ export const createKiroPlugin =
               ...modelInfo,
               api: {
                 ...(modelInfo.api || {}),
-                npm: '@ai-sdk/openai-compatible'
+                npm: '@ai-sdk/openai-compatible',
+                // Ensure url is always set. modelInfo.api.url should already be
+                // populated from the config hook's provider.api field, but we
+                // set it explicitly as a fallback for any edge cases.
+                url: modelInfo.api?.url || baseURL
               }
             }
           }

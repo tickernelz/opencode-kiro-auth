@@ -17,11 +17,15 @@ export function convertToOpenAI(event: StreamEvent, id: string, model: string): 
         finish_reason: null
       })
     } else if (event.delta.type === 'thinking_delta') {
-      base.choices.push({
-        index: 0,
-        delta: { reasoning_content: event.delta.thinking },
-        finish_reason: null
-      })
+      // reasoning_content is supported by some OpenAI-compatible clients;
+      // emit it but also skip if empty to avoid noise.
+      if (event.delta.thinking) {
+        base.choices.push({
+          index: 0,
+          delta: { reasoning_content: event.delta.thinking },
+          finish_reason: null
+        })
+      }
     } else if (event.delta.type === 'input_json_delta') {
       base.choices.push({
         index: 0,
@@ -62,7 +66,15 @@ export function convertToOpenAI(event: StreamEvent, id: string, model: string): 
       completion_tokens: event.usage?.output_tokens || 0,
       total_tokens: (event.usage?.input_tokens || 0) + (event.usage?.output_tokens || 0)
     }
+  } else {
+    // Skip Anthropic-specific events that @ai-sdk/openai-compatible doesn't understand
+    // (content_block_start for text/thinking, content_block_stop, message_stop, etc.)
+    // Returning null signals the caller to skip this event.
+    return null
   }
+
+  // Don't emit chunks with empty choices — the SDK may mishandle them.
+  if (base.choices.length === 0) return null
 
   return base
 }

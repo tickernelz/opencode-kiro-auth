@@ -80,3 +80,9 @@ describe('DEFAULT_PROVIDER_MODELS', () => {
     expect(DEFAULT_MODEL_IDS).not.toContain('claude-sonnet-4.0')
   })
 })
+
+describe('normalizeRegion', () => {
+  test('accepts configured AWS regions with the installed Zod enum shape', () => {
+    expect(normalizeRegion('us-west-2')).toBe('us-west-2')
+  })
+})
