@@ -179,6 +179,16 @@ export async function syncFromKiroCli() {
           }
         }
 
+        // When the usage fetch failed we must not advance the quota snapshot:
+        // carry forward any existing quota and leave the quota sync timestamp
+        // unchanged so mergeAccounts does not treat zeroed counts as newer.
+        const carriedUsedCount = usageOk ? usedCount : existingById?.used_count || 0
+        const carriedLimitCount = usageOk ? limitCount : existingById?.limit_count || 0
+        const carriedSubscriptionPlan = usageOk
+          ? subscriptionPlan
+          : existingById?.subscription_plan || undefined
+        const carriedLastSync = usageOk ? Date.now() : existingById?.last_sync || 0
+
         await kiroDb.upsertAccount({
           id,
           email: resolvedEmail,
@@ -195,10 +205,10 @@ export async function syncFromKiroCli() {
           rateLimitResetTime: 0,
           isHealthy: true,
           failCount: 0,
-          usedCount,
-          limitCount,
-          subscriptionPlan,
-          lastSync: Date.now()
+          usedCount: carriedUsedCount,
+          limitCount: carriedLimitCount,
+          subscriptionPlan: carriedSubscriptionPlan,
+          lastSync: carriedLastSync
         })
       }
     }
@@ -215,8 +225,19 @@ export async function writeToKiroCli(acc: any) {
     const cliDb = new Database(dbPath)
     cliDb.run('PRAGMA busy_timeout = 5000')
     const rows = cliDb.prepare('SELECT key, value FROM auth_kv').all() as any[]
-    const targetKey = acc.authMethod === 'idc' ? 'kirocli:odic:token' : 'kirocli:social:token'
-    const row = rows.find((r) => r.key === targetKey || r.key.endsWith(targetKey))
+    const row =
+      acc.authMethod === 'idc'
+        ? rows.find(
+            (r) =>
+              typeof r?.key === 'string' &&
+              r.key.includes(':token') &&
+              (r.key.includes('odic') || r.key.includes('oidc'))
+          )
+        : rows.find(
+            (r) =>
+              typeof r?.key === 'string' &&
+              (r.key === 'kirocli:social:token' || r.key.endsWith('kirocli:social:token'))
+          )
     if (row) {
       const data = JSON.parse(row.value)
       data.access_token = acc.accessToken

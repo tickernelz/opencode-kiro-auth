@@ -87,4 +87,24 @@ describe('mergeAccounts', () => {
     expect(merged?.subscriptionPlan).toBe('KIRO PRO+')
     expect(merged?.lastSync).toBe(2000)
   })
+
+  test('does not let a failed usage fetch (newer 0/0 snapshot) clobber real quota', () => {
+    const [merged] = mergeAccounts(
+      [account({ usedCount: 120.5, limitCount: 2000, lastSync: 1000 })],
+      [account({ usedCount: 0, limitCount: 0, lastSync: 2000 })]
+    )
+
+    expect(merged?.usedCount).toBe(120.5)
+    expect(merged?.limitCount).toBe(2000)
+  })
+
+  test('fills empty existing quota from a newer real snapshot', () => {
+    const [merged] = mergeAccounts(
+      [account({ usedCount: 0, limitCount: 0, lastSync: 1000 })],
+      [account({ usedCount: 5, limitCount: 2000, lastSync: 2000 })]
+    )
+
+    expect(merged?.usedCount).toBe(5)
+    expect(merged?.limitCount).toBe(2000)
+  })
 })

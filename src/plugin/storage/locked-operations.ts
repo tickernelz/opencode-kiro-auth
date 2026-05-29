@@ -67,7 +67,14 @@ export function mergeAccounts(
         isPermanentError(existingAcc.unhealthyReason) || isPermanentError(acc.unhealthyReason)
       const incomingSync = acc.lastSync || 0
       const existingSync = existingAcc.lastSync || 0
-      const useIncomingQuota = incomingSync > 0 && incomingSync > existingSync
+      const incomingHasQuota = (acc.limitCount || 0) > 0
+      const existingHasQuota = (existingAcc.limitCount || 0) > 0
+      // Only adopt the incoming quota snapshot when it is strictly newer AND it
+      // is not an empty (0/0) snapshot replacing real existing quota. A failed
+      // remote usage fetch produces a newer timestamp with zeroed counts, which
+      // must never clobber good quota data.
+      const useIncomingQuota =
+        incomingSync > 0 && incomingSync > existingSync && (incomingHasQuota || !existingHasQuota)
       const incomingExpires = acc.expiresAt || 0
       const existingExpires = existingAcc.expiresAt || 0
       const preserveExistingCredentials =

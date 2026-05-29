@@ -155,11 +155,3 @@ export function findRealTag(buffer: string, tag: string, startIndex = 0): number
 
   return -1
 }
-
-export function findRealThinkingEndTag(
-  buffer: string,
-  tag: string,
-  _allowBufferEnd = false
-): number {
-  return findRealTag(buffer, tag)
-}

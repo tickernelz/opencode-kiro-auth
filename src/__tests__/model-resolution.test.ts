@@ -30,6 +30,16 @@ describe('resolveKiroModel', () => {
     expect(resolveKiroModel('claude-opus-4-5')).toBe('claude-opus-4.5')
   })
 
+  test('maps legacy 1m aliases onto their current catalog model', () => {
+    expect(resolveKiroModel('claude-sonnet-4-5-1m')).toBe('claude-sonnet-4.5')
+    expect(resolveKiroModel('claude-sonnet-4-5-1m-thinking')).toBe('claude-sonnet-4.5')
+    expect(resolveKiroModel('claude-sonnet-4.5-1m')).toBe('claude-sonnet-4.5')
+    expect(resolveKiroModel('claude-sonnet-4-6-1m')).toBe('claude-sonnet-4.6')
+    expect(resolveKiroModel('claude-sonnet-4.6-1m')).toBe('claude-sonnet-4.6')
+    expect(resolveKiroModel('claude-opus-4-6-1m')).toBe('claude-opus-4.6')
+    expect(resolveKiroModel('claude-opus-4.6-1m')).toBe('claude-opus-4.6')
+  })
+
   test('rejects removed qwen3-coder-480b slug', () => {
     expect(() => resolveKiroModel('qwen3-coder-480b')).toThrow(
       'Unsupported model: qwen3-coder-480b'

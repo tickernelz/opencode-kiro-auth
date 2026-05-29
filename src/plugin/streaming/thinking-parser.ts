@@ -1,9 +1,6 @@
-import { findRealTag, findRealThinkingEndTag } from './stream-parser.js'
 import { createTextDeltaEvents, createThinkingDeltaEvents, stopBlock } from './stream-state.js'
+import { resetThinkingLexState, scanForTag } from './thinking-lexer.js'
 import { StreamEvent, StreamState, THINKING_END_TAG, THINKING_START_TAG } from './types.js'
-
-const START_TAG_KEEP_CHARS = THINKING_START_TAG.length - 1
-const END_TAG_KEEP_CHARS = THINKING_END_TAG.length - 1
 
 export function createContentDeltaEvents(text: string, streamState: StreamState): StreamEvent[] {
   if (!text) return []
@@ -60,18 +57,25 @@ function drainThinkingBuffer(
 
   while (streamState.buffer.length > 0) {
     if (!streamState.inThinking && !streamState.thinkingExtracted) {
-      const startPos = findRealTag(streamState.buffer, THINKING_START_TAG)
-      if (startPos !== -1) {
+      const scan = scanForTag(
+        streamState.buffer,
+        streamState.thinkingLex,
+        THINKING_START_TAG,
+        allowEndAtBufferEnd
+      )
+      if (scan.tagIndex !== -1) {
         streamState.pendingTextBeforeThinking = ''
-        streamState.buffer = streamState.buffer.slice(startPos + THINKING_START_TAG.length)
+        streamState.buffer = streamState.buffer.slice(scan.tagIndex + THINKING_START_TAG.length)
         streamState.inThinking = true
         streamState.stripThinkingLeadingNewline = true
+        resetThinkingLexState(streamState.thinkingLex)
+        // Content immediately after the open tag is on the same line as the
+        // tag, so it is not at a line start until a newline is stripped below.
+        streamState.thinkingLex.atLineStart = false
         continue
       }
 
-      const safeLen = allowEndAtBufferEnd
-        ? streamState.buffer.length
-        : Math.max(0, streamState.buffer.length - START_TAG_KEEP_CHARS)
+      const safeLen = scan.safeLength
       if (safeLen > 0) {
         streamState.pendingTextBeforeThinking += streamState.buffer.slice(0, safeLen)
         streamState.buffer = streamState.buffer.slice(safeLen)
@@ -82,35 +86,32 @@ function drainThinkingBuffer(
     if (streamState.inThinking) {
       streamState.buffer = stripThinkingLeadingNewline(streamState.buffer, streamState)
 
-      const endPos = findRealThinkingEndTag(
+      const scan = scanForTag(
         streamState.buffer,
+        streamState.thinkingLex,
         THINKING_END_TAG,
         allowEndAtBufferEnd
       )
-      if (endPos !== -1) {
-        const thinkingPart = streamState.buffer.slice(0, endPos)
+
+      if (scan.tagIndex !== -1) {
+        const thinkingPart = streamState.buffer.slice(0, scan.tagIndex)
         if (thinkingPart) {
           events.push(...createThinkingDeltaEvents(thinkingPart, streamState))
         }
 
-        streamState.buffer = streamState.buffer.slice(endPos + THINKING_END_TAG.length)
+        streamState.buffer = streamState.buffer.slice(scan.tagIndex + THINKING_END_TAG.length)
         streamState.inThinking = false
         streamState.thinkingExtracted = true
         streamState.pendingTextBeforeThinking = ''
         streamState.stripThinkingLeadingNewline = false
         streamState.stripTextLeadingNewlinesAfterThinking = true
+        resetThinkingLexState(streamState.thinkingLex)
         events.push(...createThinkingDeltaEvents('', streamState))
         events.push(...stopBlock(streamState.thinkingBlockIndex, streamState))
         continue
       }
 
-      const unresolvedEndPos = findRealTag(streamState.buffer, THINKING_END_TAG)
-      const safeLen =
-        unresolvedEndPos !== -1
-          ? unresolvedEndPos
-          : allowEndAtBufferEnd
-            ? streamState.buffer.length
-            : Math.max(0, streamState.buffer.length - END_TAG_KEEP_CHARS)
+      const safeLen = scan.safeLength
       if (safeLen > 0) {
         const safeThinking = streamState.buffer.slice(0, safeLen)
         if (safeThinking) {
@@ -134,10 +135,12 @@ function stripThinkingLeadingNewline(text: string, streamState: StreamState): st
   if (!streamState.stripThinkingLeadingNewline) return text
   if (text.startsWith('\r\n')) {
     streamState.stripThinkingLeadingNewline = false
+    streamState.thinkingLex.atLineStart = true
     return text.slice(2)
   }
   if (text.startsWith('\n')) {
     streamState.stripThinkingLeadingNewline = false
+    streamState.thinkingLex.atLineStart = true
     return text.slice(1)
   }
   if (text !== '\r') {

@@ -259,7 +259,11 @@ export const MODEL_ALIASES = {
   'claude-opus-4-6-1m': 'claude-opus-4.6',
   'claude-opus-4.6-1m': 'claude-opus-4.6',
   'claude-sonnet-4-6-1m': 'claude-sonnet-4.6',
-  'claude-sonnet-4.6-1m': 'claude-sonnet-4.6'
+  'claude-sonnet-4.6-1m': 'claude-sonnet-4.6',
+  // Sonnet 4.5 no longer has a dedicated 1M-context catalog entry; older
+  // configs that requested the 1M variant fall back to the standard 4.5 model.
+  'claude-sonnet-4-5-1m': 'claude-sonnet-4.5',
+  'claude-sonnet-4.5-1m': 'claude-sonnet-4.5'
 } as Record<string, keyof typeof KIRO_MODEL_CATALOG>
 
 function stripThinkingSuffix(model: string): string {

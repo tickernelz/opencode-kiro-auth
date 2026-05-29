@@ -97,6 +97,16 @@ describe('thinking stream transform', () => {
     expect(textFrom(deltas)).toBe('Done')
   })
 
+  test('keeps quoted literal end tag with surrounding spaces inside reasoning', async () => {
+    const deltas = await collectDeltas(
+      ['<thinking>quote "keep </thinking> inside" still thinking</thinking>Done'],
+      true
+    )
+
+    expect(reasoningFrom(deltas)).toBe('quote "keep </thinking> inside" still thinking')
+    expect(textFrom(deltas)).toBe('Done')
+  })
+
   test('does not close thinking on code-fenced literal end tags', async () => {
     const deltas = await collectDeltas(
       ['<thinking>\n```text\n</thinking>\n```\nstill thinking</thinking>Done'],
@@ -105,6 +115,60 @@ describe('thinking stream transform', () => {
 
     expect(reasoningFrom(deltas)).toBe('```text\n</thinking>\n```\nstill thinking')
     expect(textFrom(deltas)).toBe('Done')
+  })
+
+  test('keeps fenced literal end tag intact when the fence is split across chunks', async () => {
+    const deltas = await collectDeltas(
+      ['<thinking>```text\ninside code ', '</thinking>\n```\nstill thinking</thinking>Done'],
+      true
+    )
+
+    expect(reasoningFrom(deltas)).toBe('```text\ninside code </thinking>\n```\nstill thinking')
+    expect(textFrom(deltas)).toBe('Done')
+  })
+
+  test('keeps quoted literal end tag intact when the quote is split across chunks', async () => {
+    const deltas = await collectDeltas(
+      ['<thinking>quote "keep ', '</thinking> inside" still thinking</thinking>Done'],
+      true
+    )
+
+    expect(reasoningFrom(deltas)).toBe('quote "keep </thinking> inside" still thinking')
+    expect(textFrom(deltas)).toBe('Done')
+  })
+
+  test('does not treat apostrophes in normal reasoning text as quote delimiters', async () => {
+    const deltas = await collectDeltas(["<thinking>I don't need more</thinking>Done"], true)
+
+    expect(reasoningFrom(deltas)).toBe("I don't need more")
+    expect(textFrom(deltas)).toBe('Done')
+  })
+
+  test('does not close thinking on an escaped quote inside a quoted literal tag', async () => {
+    const deltas = await collectDeltas(
+      ['<thinking>quote "keep \\" </thinking> \\" inside" still thinking</thinking>Done'],
+      true
+    )
+
+    expect(reasoningFrom(deltas)).toBe('quote "keep \\" </thinking> \\" inside" still thinking')
+    expect(textFrom(deltas)).toBe('Done')
+  })
+
+  test('keeps single-quoted literal end tags inside reasoning', async () => {
+    const deltas = await collectDeltas(
+      ["<thinking>quote 'keep </thinking> inside' still thinking</thinking>Done"],
+      true
+    )
+
+    expect(reasoningFrom(deltas)).toBe("quote 'keep </thinking> inside' still thinking")
+    expect(textFrom(deltas)).toBe('Done')
+  })
+
+  test('treats an unterminated quote at stream end as literal reasoning', async () => {
+    const deltas = await collectDeltas(['<thinking>partial "unterminated quote at end'], true)
+
+    expect(reasoningFrom(deltas)).toBe('partial "unterminated quote at end')
+    expect(textFrom(deltas)).toBe('')
   })
 
   test('flushes text if a thinking model never emits a thinking block', async () => {

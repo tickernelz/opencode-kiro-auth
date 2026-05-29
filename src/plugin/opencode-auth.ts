@@ -15,18 +15,28 @@ export function getOpenCodeAuthPath(): string {
   return join(getDataDir(), 'auth.json')
 }
 
-function readAuthFile(): Record<string, any> {
+type ReadAuthResult =
+  | { status: 'ok'; data: Record<string, any> }
+  | { status: 'missing' }
+  | { status: 'unparseable' }
+
+function readAuthFile(): ReadAuthResult {
   const path = getOpenCodeAuthPath()
-  if (!existsSync(path)) return {}
+  if (!existsSync(path)) return { status: 'missing' }
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf-8'))
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return { status: 'ok', data: parsed }
+    }
+    // Valid JSON but not an object (e.g. an array or scalar). Treat it as
+    // unparseable so we never clobber an unexpected file shape.
+    return { status: 'unparseable' }
   } catch (error) {
     logger.warn('OpenCode auth file could not be parsed; skipping placeholder auth setup', {
       path,
       error: error instanceof Error ? error.message : String(error)
     })
-    return {}
+    return { status: 'unparseable' }
   }
 }
 
@@ -37,7 +47,14 @@ function writeAuthFile(data: Record<string, any>): void {
 }
 
 export function ensureOpenCodeAuthPlaceholder(providerID = KIRO_PROVIDER_ID): void {
-  const data = readAuthFile()
+  const result = readAuthFile()
+
+  // Never write when the existing file is present but unparseable: doing so
+  // would drop other providers' credentials if auth.json is temporarily
+  // truncated or corrupt.
+  if (result.status === 'unparseable') return
+
+  const data = result.status === 'ok' ? result.data : {}
   let changed = false
 
   if (providerID === KIRO_PROVIDER_ID && data[KIRO_LEGACY_PROVIDER_ID] && !data[KIRO_PROVIDER_ID]) {
