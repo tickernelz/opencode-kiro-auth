@@ -3,6 +3,8 @@ import { DEFAULT_MODEL_IDS, DEFAULT_PROVIDER_MODELS, isLongContextModel } from '
 
 describe('isLongContextModel', () => {
   test('returns true for long-context models', () => {
+    expect(isLongContextModel('claude-opus-4.8')).toBe(true)
+    expect(isLongContextModel('claude-opus-4-8')).toBe(true)
     expect(isLongContextModel('claude-opus-4.7')).toBe(true)
     expect(isLongContextModel('claude-opus-4-7')).toBe(true)
     expect(isLongContextModel('claude-opus-4.7-thinking')).toBe(true)
@@ -40,6 +42,7 @@ describe('DEFAULT_PROVIDER_MODELS', () => {
   test('surfaces only the official Kiro CLI model slugs by default', () => {
     expect(DEFAULT_MODEL_IDS).toEqual([
       'auto',
+      'claude-opus-4.8',
       'claude-opus-4.7',
       'claude-opus-4.6',
       'claude-opus-4.5',
@@ -56,6 +59,7 @@ describe('DEFAULT_PROVIDER_MODELS', () => {
   })
 
   test('uses current Kiro context windows', () => {
+    expect(DEFAULT_PROVIDER_MODELS['claude-opus-4.8']?.limit.context).toBe(1000000)
     expect(DEFAULT_PROVIDER_MODELS['claude-opus-4.7']?.limit.context).toBe(1000000)
     expect(DEFAULT_PROVIDER_MODELS['claude-opus-4.6']?.limit.context).toBe(1000000)
     expect(DEFAULT_PROVIDER_MODELS['claude-sonnet-4.6']?.limit.context).toBe(1000000)

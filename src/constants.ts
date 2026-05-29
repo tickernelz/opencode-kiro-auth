@@ -91,6 +91,18 @@ export const KIRO_MODEL_CATALOG = {
     outputModalities: TEXT_OUTPUT
   }),
 
+  'claude-opus-4.8': model({
+    name: 'Claude Opus 4.8 (2.2x)',
+    apiModelId: 'claude-opus-4.8',
+    context: LONG_CONTEXT,
+    output: DEFAULT_OUTPUT,
+    input: TEXT_IMAGE_PDF,
+    outputModalities: TEXT_OUTPUT,
+    costMultiplier: '2.2x',
+    releaseDate: '2026-05-28',
+    reasoning: true
+  }),
+
   'claude-opus-4.7': model({
     name: 'Claude Opus 4.7 (2.2x)',
     apiModelId: 'claude-opus-4.7',
@@ -233,6 +245,7 @@ export const LEGACY_MODEL_MAPPING: Record<string, string> = {
 }
 
 const HYPHENATED_CLAUDE_ALIASES = [
+  'claude-opus-4.8',
   'claude-opus-4.7',
   'claude-opus-4.6',
   'claude-opus-4.5',

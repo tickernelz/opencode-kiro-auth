@@ -5,6 +5,7 @@ import { resolveKiroModel } from '../plugin/models.js'
 describe('resolveKiroModel', () => {
   test('resolves newly advertised model slugs', () => {
     expect(resolveKiroModel('auto')).toBe('auto')
+    expect(resolveKiroModel('claude-opus-4.8')).toBe('claude-opus-4.8')
     expect(resolveKiroModel('claude-opus-4.7')).toBe('claude-opus-4.7')
     expect(resolveKiroModel('claude-sonnet-4.6')).toBe('claude-sonnet-4.6')
     expect(resolveKiroModel('deepseek-3.2')).toBe('deepseek-3.2')
@@ -20,6 +21,8 @@ describe('resolveKiroModel', () => {
   })
 
   test('accepts legacy hyphenated and thinking aliases without listing them by default', () => {
+    expect(resolveKiroModel('claude-opus-4-8')).toBe('claude-opus-4.8')
+    expect(resolveKiroModel('claude-opus-4-8-thinking')).toBe('claude-opus-4.8')
     expect(resolveKiroModel('claude-opus-4-7')).toBe('claude-opus-4.7')
     expect(resolveKiroModel('claude-opus-4-7-thinking')).toBe('claude-opus-4.7')
     expect(resolveKiroModel('claude-haiku-4.5')).toBe('claude-haiku-4.5')
@@ -38,6 +41,7 @@ describe('resolveKiroModel', () => {
   })
 
   test('supported model list includes current Kiro documentation models', () => {
+    expect(SUPPORTED_MODELS).toContain('claude-opus-4.8')
     expect(SUPPORTED_MODELS).toContain('claude-opus-4.7')
     expect(SUPPORTED_MODELS).toContain('glm-5')
   })
