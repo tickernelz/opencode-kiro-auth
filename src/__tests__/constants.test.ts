@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { DEFAULT_MODEL_IDS, DEFAULT_PROVIDER_MODELS, isLongContextModel } from '../constants.js'
+import {
+  DEFAULT_MODEL_IDS,
+  DEFAULT_PROVIDER_MODELS,
+  isLongContextModel,
+  normalizeRegion
+} from '../constants.js'
 
 describe('isLongContextModel', () => {
   test('returns true for long-context models', () => {

@@ -50,7 +50,8 @@ export async function* transformKiroStream(
           textOnlyContent += event.data
 
           for (const ev of createContentDeltaEvents(event.data, streamState)) {
-            yield convertToOpenAI(ev, conversationId, model)
+            const converted = convertToOpenAI(ev, conversationId, model)
+            if (converted !== null) yield converted
           }
         } else if (event.type === 'toolUse') {
           const tc = event.data
@@ -102,7 +103,8 @@ export async function* transformKiroStream(
     }
 
     for (const ev of flushContentDeltaEvents(streamState)) {
-      yield convertToOpenAI(ev, conversationId, model)
+      const converted = convertToOpenAI(ev, conversationId, model)
+      if (converted !== null) yield converted
     }
 
     for (const ev of stopBlock(streamState.textBlockIndex, streamState)) {

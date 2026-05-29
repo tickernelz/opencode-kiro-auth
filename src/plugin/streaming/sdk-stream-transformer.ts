@@ -35,7 +35,8 @@ export async function* transformSdkStream(
         textOnlyContent += text
 
         for (const ev of createContentDeltaEvents(text, streamState)) {
-          yield convertToOpenAI(ev, conversationId, model)
+          const converted = convertToOpenAI(ev, conversationId, model)
+          if (converted !== null) yield converted
         }
       } else if (event.toolUseEvent) {
         const tc = event.toolUseEvent
@@ -76,7 +77,8 @@ export async function* transformSdkStream(
     }
 
     for (const ev of flushContentDeltaEvents(streamState)) {
-      yield convertToOpenAI(ev, conversationId, model)
+      const converted = convertToOpenAI(ev, conversationId, model)
+      if (converted !== null) yield converted
     }
 
     for (const ev of stopBlock(streamState.textBlockIndex, streamState)) {

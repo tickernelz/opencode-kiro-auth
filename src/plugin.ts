@@ -47,6 +47,11 @@ export const createKiroPlugin =
 
     const requestHandler = new RequestHandler(accountManager, config, repository, client)
 
+    const baseURL = KIRO_CONSTANTS.BASE_URL.replace('/generateAssistantResponse', '').replace(
+      '{{region}}',
+      config.default_region || KIRO_CONSTANTS.DEFAULT_REGION
+    )
+
     await authHandler.initialize(showToast as any)
     if (accountManager.getAccountCount() > 0) {
       ensureOpenCodeAuthPlaceholder(id)
@@ -69,6 +74,9 @@ export const createKiroPlugin =
         if (!input.provider[id]) input.provider[id] = {}
         if (!input.provider[id].name) input.provider[id].name = 'Kiro'
         input.provider[id].npm = '@ai-sdk/openai-compatible'
+        if (!input.provider[id].api) {
+          input.provider[id].api = baseURL
+        }
         input.provider[id].models = mergeProviderModels(input.provider[id].models)
       },
       auth: {
