@@ -28,11 +28,15 @@ models with substantial trial quotas.
 
 Add the plugin to your `opencode.json` or `opencode.jsonc`:
 
+> Use the `kiro-auth` provider id. The plugin also keeps serving the legacy `kiro`
+> id for existing installs, but `kiro-auth` is recommended because OpenCode is
+> expected to ship a built-in `kiro` provider that would otherwise clash.
+
 ```json
 {
   "plugin": ["@zhafron/opencode-kiro-auth"],
   "provider": {
-    "kiro": {
+    "kiro-auth": {
       "models": {
         "claude-sonnet-4-5": {
           "name": "Claude Sonnet 4.5",
@@ -181,14 +185,14 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
 
 1. **Authentication via Kiro CLI (Recommended)**:
    - Perform login directly in your terminal using `kiro-cli login`.
-   - The plugin automatically bootstraps a minimal `kiro` placeholder in
+   - The plugin automatically bootstraps a minimal `kiro-auth` placeholder in
      OpenCode's `auth.json` when it detects the Kiro CLI database, then imports
      and synchronizes your active session on startup.
    - For AWS IAM Identity Center (SSO/IDC), the plugin imports both the token and device
      registration (OIDC client credentials) from the `kiro-cli` database.
 2. **Direct Authentication**:
    - Run `opencode auth login`.
-   - Select `Other`, type `kiro`, and press enter.
+   - Select `Other`, type `kiro-auth`, and press enter.
    - You'll be prompted for your **IAM Identity Center Start URL** and **IAM Identity
      Center region** (`sso_region`).
      - Leave it blank to sign in with **AWS Builder ID**.
@@ -262,7 +266,7 @@ It will replace it with the real email once usage/email lookup succeeds.
 ### Kiro CLI (Google/GitHub OAuth) users: plugin sync does not start
 
 If you authenticated via `kiro-cli login` using Google or GitHub OAuth (not AWS Builder
-ID or IAM Identity Center), OpenCode still needs a stored `kiro` auth entry before it
+ID or IAM Identity Center), OpenCode still needs a stored `kiro-auth` auth entry before it
 will call the plugin loader.
 
 The plugin now creates that minimal placeholder automatically when it detects the local
