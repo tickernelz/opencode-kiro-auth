@@ -133,6 +133,21 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
             "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
           }
         },
+        "claude-opus-4-8": {
+          "name": "Claude Opus 4.8",
+          "limit": { "context": 1000000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "claude-opus-4-8-thinking": {
+          "name": "Claude Opus 4.8 Thinking",
+          "limit": { "context": 1000000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
+            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
+            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+          }
+        },
         "claude-sonnet-4-5-1m": {
           "name": "Claude Sonnet 4.5 (1M Context)",
           "limit": { "context": 1000000, "output": 64000 },

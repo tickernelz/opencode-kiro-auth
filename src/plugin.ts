@@ -60,6 +60,11 @@ const DEFAULT_MODELS: Record<string, any> = {
     limit: { context: 1000000, output: 64000 },
     modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
   },
+  'claude-opus-4-8': {
+    name: 'Claude Opus 4.8 (2.2x)',
+    limit: { context: 1000000, output: 64000 },
+    modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
+  },
   // Open weight models
   'deepseek-3.2': {
     name: 'DeepSeek 3.2 (0.25x)',

@@ -16,6 +16,11 @@ describe('resolveKiroModel', () => {
     expect(resolveKiroModel('claude-sonnet-4')).toBe('claude-sonnet-4')
   })
 
+  test('resolves Claude Opus 4.8 (and its thinking variant)', () => {
+    expect(resolveKiroModel('claude-opus-4-8')).toBe('claude-opus-4.8')
+    expect(resolveKiroModel('claude-opus-4-8-thinking')).toBe('claude-opus-4.8')
+  })
+
   test('rejects removed qwen3-coder-480b slug', () => {
     expect(() => resolveKiroModel('qwen3-coder-480b')).toThrow(
       'Unsupported model: qwen3-coder-480b'
