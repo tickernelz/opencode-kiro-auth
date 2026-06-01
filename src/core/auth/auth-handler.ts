@@ -2,12 +2,16 @@ import type { AuthHook } from '@opencode-ai/plugin'
 import type { AccountRepository } from '../../infrastructure/database/account-repository.js'
 import { RegionSchema } from '../../plugin/config/schema.js'
 import * as logger from '../../plugin/logger.js'
+import { summarizeUsage } from '../../plugin/usage.js'
+import { UsageTracker } from '../account/usage-tracker.js'
 import { IdcAuthMethod } from './idc-auth-method.js'
+import { TokenRefresher } from './token-refresher.js'
 
 type ToastFunction = (message: string, variant: 'info' | 'warning' | 'success' | 'error') => void
 
 export class AuthHandler {
   private accountManager?: any
+  private startupUsageFetched = false
 
   constructor(
     private config: any,
@@ -29,7 +33,53 @@ export class AuthHandler {
       logger.log('Kiro CLI sync: done', { importedAccounts: accounts.length })
     }
 
-    this.logUsageSummary(showToast)
+    // Refresh usage before the summary toast: the persisted value is stale after
+    // the monthly reset until the first request syncs. Backgrounded so it never
+    // delays the auth loader, and falls back to the stored value on error.
+    void (async () => {
+      try {
+        await this.refreshUsageFromApi(showToast)
+      } catch (e) {
+        logger.warn('Startup usage refresh failed', {
+          error: e instanceof Error ? e.message : String(e)
+        })
+      }
+      this.logUsageSummary(showToast)
+    })()
+  }
+
+  async refreshUsageFromApi(showToast?: ToastFunction): Promise<void> {
+    if (!this.accountManager || this.config.usage_tracking_enabled === false) return
+    if (this.startupUsageFetched) return
+    this.startupUsageFetched = true
+
+    const { syncFromKiroCli } = await import('../../plugin/sync/kiro-cli.js')
+    const tokenRefresher = new TokenRefresher(
+      this.config,
+      this.accountManager,
+      syncFromKiroCli,
+      this.repository
+    )
+    const usageTracker = new UsageTracker(this.config, this.accountManager, this.repository)
+    const toast: ToastFunction = showToast ?? (() => {})
+
+    for (const acc of this.accountManager.getAccounts()) {
+      if (!acc.isHealthy) continue
+      try {
+        const { account: usable } = await tokenRefresher.refreshIfNeeded(
+          acc,
+          this.accountManager.toAuthDetails(acc),
+          toast
+        )
+        if (!usable.isHealthy) continue
+        await usageTracker.syncNow(usable, this.accountManager.toAuthDetails(usable))
+      } catch (e) {
+        logger.warn('Startup usage fetch failed; keeping stored value', {
+          email: acc.email,
+          error: e instanceof Error ? e.message : String(e)
+        })
+      }
+    }
   }
 
   private logUsageSummary(showToast?: ToastFunction): void {
@@ -38,10 +88,8 @@ export class AuthHandler {
     if (!accounts.length) return
 
     for (const acc of accounts) {
-      const used = acc.usedCount ?? 0
-      const limit = acc.limitCount ?? 0
+      const { used, limit, pct } = summarizeUsage(acc.usedCount ?? 0, acc.limitCount ?? 0)
       if (limit > 0) {
-        const pct = Math.round((used / limit) * 100)
         const msg = `Kiro usage (${acc.email}): ${used}/${limit} (${pct}%)`
         logger.log(msg)
         if (showToast) {

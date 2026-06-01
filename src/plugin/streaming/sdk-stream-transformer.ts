@@ -32,6 +32,8 @@ export async function* transformSdkStream(
   let outputTokens = 0
   let inputTokens = 0
   let contextUsagePercentage: number | null = null
+  let realInputTokens: number | undefined
+  let realOutputTokens: number | undefined
   const toolCalls: ToolCallState[] = []
   let currentToolCall: ToolCallState | null = null
 
@@ -148,6 +150,11 @@ export async function* transformSdkStream(
         if (event.metadataEvent.contextUsagePercentage) {
           contextUsagePercentage = event.metadataEvent.contextUsagePercentage
         }
+        if (event.metadataEvent.tokenUsage) {
+          const tu = event.metadataEvent.tokenUsage
+          if (typeof tu.inputTokens === 'number') realInputTokens = tu.inputTokens
+          if (typeof tu.outputTokens === 'number') realOutputTokens = tu.outputTokens
+        }
       } else if ((event as any).contextUsageEvent) {
         const cue = (event as any).contextUsageEvent
         if (cue.contextUsagePercentage) {
@@ -259,6 +266,10 @@ export async function* transformSdkStream(
       const totalTokens = Math.round((contextWindow * contextUsagePercentage) / 100)
       inputTokens = Math.max(0, totalTokens - outputTokens)
     }
+
+    // Real token counts from Kiro's metadata win over the context-% estimate.
+    if (realInputTokens !== undefined) inputTokens = realInputTokens
+    if (realOutputTokens !== undefined) outputTokens = realOutputTokens
 
     yield convertToOpenAI(
       {

@@ -1,6 +1,7 @@
 import type { AccountRepository } from '../../infrastructure/database/account-repository'
 import type { AccountManager } from '../../plugin/accounts'
 import type { ManagedAccount } from '../../plugin/types'
+import { summarizeUsage } from '../../plugin/usage'
 
 type ToastFunction = (message: string, variant: 'info' | 'warning' | 'success' | 'error') => void
 
@@ -72,11 +73,8 @@ export class AccountSelector {
   }
 
   private formatUsageMessage(usedCount: number, limitCount: number, email: string): string {
-    if (limitCount > 0) {
-      const percentage = Math.round((usedCount / limitCount) * 100)
-      return `Usage (${email}): ${usedCount}/${limitCount} (${percentage}%)`
-    }
-    return `Usage (${email}): ${usedCount}`
+    const { used, limit, pct } = summarizeUsage(usedCount, limitCount)
+    return limit > 0 ? `Usage (${email}): ${used}/${limit} (${pct}%)` : `Usage (${email}): ${used}`
   }
 
   private checkCircuitBreaker(): void {

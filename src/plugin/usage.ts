@@ -63,12 +63,16 @@ export async function fetchUsageLimits(auth: KiroAuthDetails): Promise<any> {
         limitCount = 0
       if (Array.isArray(data.usageBreakdownList)) {
         for (const s of data.usageBreakdownList) {
+          // Kiro reports a rounded integer (currentUsage) plus the exact value
+          // (currentUsageWithPrecision) — the latter is what the Kiro dashboard
+          // shows (e.g. 70.45 credits). Prefer it; fall back to the integer.
           if (s.freeTrialInfo) {
-            usedCount += s.freeTrialInfo.currentUsage || 0
-            limitCount += s.freeTrialInfo.usageLimit || 0
+            usedCount +=
+              s.freeTrialInfo.currentUsageWithPrecision ?? s.freeTrialInfo.currentUsage ?? 0
+            limitCount += s.freeTrialInfo.usageLimitWithPrecision ?? s.freeTrialInfo.usageLimit ?? 0
           }
-          usedCount += s.currentUsage || 0
-          limitCount += s.usageLimit || 0
+          usedCount += s.currentUsageWithPrecision ?? s.currentUsage ?? 0
+          limitCount += s.usageLimitWithPrecision ?? s.usageLimit ?? 0
         }
       }
       return { usedCount, limitCount, email: data.userInfo?.email }
@@ -79,6 +83,18 @@ export async function fetchUsageLimits(auth: KiroAuthDetails): Promise<any> {
   }
 
   throw lastError || new Error('All getUsageLimits attempts failed')
+}
+
+// Credits come back fractional (e.g. 70.45); round for display and derive the
+// percentage in one place so the startup summary and the high-usage warning agree.
+export function summarizeUsage(
+  usedCount: number,
+  limitCount: number
+): { used: number; limit: number; pct: number } {
+  const used = Number(usedCount.toFixed(2))
+  const limit = Number(limitCount.toFixed(2))
+  const pct = limit > 0 ? Math.round((used / limit) * 100) : 0
+  return { used, limit, pct }
 }
 
 export function updateAccountQuota(

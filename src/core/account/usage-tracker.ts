@@ -37,15 +37,21 @@ export class UsageTracker {
     })
   }
 
+  // Fetch usage once and persist it, bypassing the cooldown/retry loop. Used by
+  // the startup refresh, where the caller handles token refresh and fallback.
+  async syncNow(account: ManagedAccount, auth: KiroAuthDetails): Promise<void> {
+    const u = await fetchUsageLimits(auth)
+    updateAccountQuota(account, u, this.accountManager)
+    await this.repository.batchSave(this.accountManager.getAccounts())
+  }
+
   private async syncWithRetry(
     account: ManagedAccount,
     auth: KiroAuthDetails,
     attempt: number
   ): Promise<void> {
     try {
-      const u = await fetchUsageLimits(auth)
-      updateAccountQuota(account, u, this.accountManager)
-      await this.repository.batchSave(this.accountManager.getAccounts())
+      await this.syncNow(account, auth)
     } catch (e: any) {
       const msg = e?.message || ''
 

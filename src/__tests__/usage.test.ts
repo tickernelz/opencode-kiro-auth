@@ -106,6 +106,62 @@ describe('fetchUsageLimits', () => {
     }
   })
 
+  test('prefers WithPrecision fields (matches Kiro dashboard credits)', async () => {
+    // Mirrors the real Kiro Power getUsageLimits response: the integer
+    // currentUsage is rounded, the dashboard shows currentUsageWithPrecision.
+    const mockFetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            usageBreakdownList: [
+              {
+                freeTrialInfo: null,
+                currentUsage: 70,
+                currentUsageWithPrecision: 70.45,
+                usageLimit: 10000,
+                usageLimitWithPrecision: 10000,
+                displayNamePlural: 'Credits',
+                resourceType: 'CREDIT'
+              }
+            ],
+            userInfo: { email: 'test@example.com' }
+          }),
+          { status: 200 }
+        )
+    )
+    const original = globalThis.fetch
+    globalThis.fetch = mockFetch as any
+    try {
+      const result = await fetchUsageLimits(makeAuth())
+      expect(result.usedCount).toBe(70.45)
+      expect(result.limitCount).toBe(10000)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  test('falls back to integer fields when precision absent', async () => {
+    const mockFetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({
+            usageBreakdownList: [{ currentUsage: 50, usageLimit: 500 }],
+            userInfo: { email: 'test@example.com' }
+          }),
+          { status: 200 }
+        )
+    )
+    const original = globalThis.fetch
+    globalThis.fetch = mockFetch as any
+    try {
+      const result = await fetchUsageLimits(makeAuth())
+      expect(result.usedCount).toBe(50)
+      expect(result.limitCount).toBe(500)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
   test('retries on FEATURE_NOT_SUPPORTED and succeeds on later attempt', async () => {
     let callCount = 0
     const mockFetch = mock(async () => {

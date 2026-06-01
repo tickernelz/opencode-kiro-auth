@@ -195,6 +195,26 @@ describe('transformSdkStream: tool call streaming', () => {
   })
 })
 
+// ── SDK stream: real token usage ─────────────────────────────────────────────
+
+describe('transformSdkStream: token usage', () => {
+  test('real tokenUsage from metadata wins over the context% estimate', async () => {
+    const events = [
+      { assistantResponseEvent: { content: 'hello' } },
+      {
+        metadataEvent: {
+          contextUsagePercentage: 80,
+          tokenUsage: { inputTokens: 1234, outputTokens: 56 }
+        }
+      }
+    ]
+    const result = await collectSdk(transformSdkStream(makeSdkResponse(events), 'auto', 'conv-1'))
+    const usageEvent = result.find((e) => e.usage)
+    expect(usageEvent.usage.prompt_tokens).toBe(1234)
+    expect(usageEvent.usage.completion_tokens).toBe(56)
+  })
+})
+
 // ── isNewThread after merge ──────────────────────────────────────────────────
 
 import { buildHistory } from '../infrastructure/transformers/history-builder.js'
