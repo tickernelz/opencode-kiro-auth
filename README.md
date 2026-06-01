@@ -28,173 +28,24 @@ models with substantial trial quotas.
 
 Add the plugin to your `opencode.json` or `opencode.jsonc`:
 
-> Use the `kiro-auth` provider id. The plugin also keeps serving the legacy `kiro`
-> id for existing installs, but `kiro-auth` is recommended because OpenCode is
-> expected to ship a built-in `kiro` provider that would otherwise clash.
-
 ```json
 {
-  "plugin": ["@zhafron/opencode-kiro-auth"],
-  "provider": {
-    "kiro-auth": {
-      "models": {
-        "claude-sonnet-4-5": {
-          "name": "Claude Sonnet 4.5",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-sonnet-4-5-thinking": {
-          "name": "Claude Sonnet 4.5 Thinking",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "claude-sonnet-4-6": {
-          "name": "Claude Sonnet 4.6",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-sonnet-4-6-thinking": {
-          "name": "Claude Sonnet 4.6 Thinking",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "claude-haiku-4-5": {
-          "name": "Claude Haiku 4.5",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image"], "output": ["text"] }
-        },
-        "claude-opus-4-5": {
-          "name": "Claude Opus 4.5",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-opus-4-5-thinking": {
-          "name": "Claude Opus 4.5 Thinking",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "claude-opus-4-6": {
-          "name": "Claude Opus 4.6",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-opus-4-6-thinking": {
-          "name": "Claude Opus 4.6 Thinking",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "claude-opus-4-6-1m": {
-          "name": "Claude Opus 4.6 (1M Context)",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-opus-4-6-1m-thinking": {
-          "name": "Claude Opus 4.6 (1M Context) Thinking",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "claude-opus-4-7": {
-          "name": "Claude Opus 4.7",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-opus-4-7-thinking": {
-          "name": "Claude Opus 4.7 Thinking",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "claude-opus-4-8": {
-          "name": "Claude Opus 4.8",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-opus-4-8-thinking": {
-          "name": "Claude Opus 4.8 Thinking",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "claude-sonnet-4-5-1m": {
-          "name": "Claude Sonnet 4.5 (1M Context)",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-sonnet-4-6-1m": {
-          "name": "Claude Sonnet 4.6 (1M Context)",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "claude-sonnet-4-6-1m-thinking": {
-          "name": "Claude Sonnet 4.6 (1M Context) Thinking",
-          "limit": { "context": 1000000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "medium": { "thinkingConfig": { "thinkingBudget": 16384 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "auto": { "name": "Auto (1.0x)" },
-        "claude-sonnet-4": {
-          "name": "Claude Sonnet 4.0 (1.3x)",
-          "limit": { "context": 200000, "output": 64000 }
-        },
-        "deepseek-3.2": {
-          "name": "DeepSeek 3.2 (0.25x)",
-          "limit": { "context": 128000, "output": 64000 }
-        },
-        "glm-5": { "name": "GLM-5 (0.5x)", "limit": { "context": 200000, "output": 64000 } },
-        "minimax-m2.5": {
-          "name": "MiniMax 2.5 (0.25x)",
-          "limit": { "context": 200000, "output": 64000 }
-        },
-        "minimax-m2.1": {
-          "name": "MiniMax 2.1 (0.15x)",
-          "limit": { "context": 200000, "output": 64000 }
-        },
-        "qwen3-coder-next": {
-          "name": "Qwen3 Coder Next (0.05x)",
-          "limit": { "context": 256000, "output": 64000 }
-        }
-      }
-    }
-  }
+  "plugin": ["@zhafron/opencode-kiro-auth"]
 }
 ```
+
+That's all you need — the plugin registers the `kiro-auth` provider and its
+models automatically.
+
+**Provider id — `kiro-auth` (with a `kiro` fallback):** use `kiro-auth` for new
+setups. If you previously configured this plugin under the old `kiro` id, it
+keeps working — the plugin also registers `kiro` as a fallback alias, routing it
+through the same backend. `kiro-auth` is recommended going forward because
+OpenCode is expected to ship a built-in `kiro` provider that would otherwise
+clash with this plugin.
+
+You only need a `provider` block if you want to override the defaults — for
+example a custom model list or your own thinking budgets.
 
 ## Setup
 
