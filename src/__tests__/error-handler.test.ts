@@ -29,6 +29,7 @@ function makeAccount(overrides: Partial<ManagedAccount> = {}): ManagedAccount {
     refreshToken: 'r',
     accessToken: 'a',
     expiresAt: Date.now() + 3600000,
+    rateLimitResetTime: 0,
     isHealthy: true,
     failCount: 0,
     lastUsed: 0,

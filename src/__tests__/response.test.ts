@@ -44,7 +44,7 @@ describe('parseEventStream', () => {
     ].join('\n')
     const result = parseEventStream(raw)
     expect(result.toolCalls).toHaveLength(1)
-    expect(result.toolCalls[0].name).toBe('bash')
+    expect(result.toolCalls[0]!.name).toBe('bash')
     expect(result.stopReason).toBe('tool_use')
   })
 

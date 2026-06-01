@@ -30,9 +30,13 @@ import {
   shortenToolName
 } from '../infrastructure/transformers/tool-transformer.js'
 import { transformToSdkRequest } from '../plugin/request.js'
+import type { KiroAuthDetails } from '../plugin/types.js'
 
-const auth = {
+const auth: KiroAuthDetails = {
+  refresh: 'refresh',
   access: 'token',
+  expires: Date.now() + 3600000,
+  authMethod: 'idc',
   region: 'us-east-1',
   email: 'test@test.com',
   profileArn: 'arn:aws:codewhisperer:us-east-1:123:profile/ABC'
@@ -299,7 +303,7 @@ describe('payload trim preserves valid structure', () => {
     const result = transformToSdkRequest(body, 'auto', auth)
     const history = result.conversationState.history
     if (history && history.length > 0) {
-      expect(history[0].userInputMessage).toBeDefined()
+      expect(history[0]!.userInputMessage).toBeDefined()
     }
   })
 
@@ -467,7 +471,7 @@ describe('collapseAgenticLoops edge cases', () => {
     ]
     const result = collapseAgenticLoops(history as any)
     expect(result).toHaveLength(2)
-    expect(result[0].assistantResponseMessage?.content).toBe('text')
+    expect(result[0]!.assistantResponseMessage?.content).toBe('text')
   })
 
   test('assistant with toolUses without following user passes through', () => {
@@ -530,9 +534,9 @@ describe('collapseAgenticLoops edge cases', () => {
       }
     ]
     const result = collapseAgenticLoops(history as any)
-    expect(result[0].assistantResponseMessage?.content).toBe('first')
-    expect(result[2].assistantResponseMessage?.content).toBe('[system: tool calling continues]')
-    expect(result[4].assistantResponseMessage?.content).toBe('[system: tool calling continues]')
+    expect(result[0]!.assistantResponseMessage?.content).toBe('first')
+    expect(result[2]!.assistantResponseMessage?.content).toBe('[system: tool calling continues]')
+    expect(result[4]!.assistantResponseMessage?.content).toBe('[system: tool calling continues]')
   })
 })
 
@@ -635,8 +639,8 @@ describe('history alternation after trim', () => {
     const result = transformToSdkRequest(body, 'auto', auth)
     const history = result.conversationState.history
     if (history && history.length > 0) {
-      expect(history[0].userInputMessage).toBeDefined()
-      expect(history[0].assistantResponseMessage).toBeUndefined()
+      expect(history[0]!.userInputMessage).toBeDefined()
+      expect(history[0]!.assistantResponseMessage).toBeUndefined()
     }
   })
 
@@ -652,8 +656,8 @@ describe('history alternation after trim', () => {
     const result = transformToSdkRequest(body, 'auto', auth)
     const history = result.conversationState.history || []
     for (let i = 0; i < history.length - 1; i++) {
-      const curr = history[i]
-      const next = history[i + 1]
+      const curr = history[i]!
+      const next = history[i + 1]!
       if (curr.userInputMessage) {
         expect(next.assistantResponseMessage).toBeDefined()
       }

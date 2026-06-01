@@ -4,7 +4,10 @@ import { fetchUsageLimits, updateAccountQuota } from '../plugin/usage.js'
 
 function makeAuth(overrides: Partial<KiroAuthDetails> = {}): KiroAuthDetails {
   return {
+    refresh: 'refresh-token',
     access: 'access-token',
+    expires: Date.now() + 3600000,
+    authMethod: 'idc',
     region: 'eu-central-1',
     profileArn: 'arn:aws:codewhisperer:eu-central-1:000000:profile/ABC',
     ...overrides
@@ -20,6 +23,7 @@ function makeAccount(overrides: Partial<ManagedAccount> = {}): ManagedAccount {
     refreshToken: 'r',
     accessToken: 'a',
     expiresAt: Date.now() + 3600000,
+    rateLimitResetTime: 0,
     isHealthy: true,
     failCount: 0,
     lastUsed: 0,

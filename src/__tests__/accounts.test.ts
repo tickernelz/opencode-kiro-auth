@@ -28,6 +28,7 @@ function makeAccount(overrides: Partial<ManagedAccount> = {}): ManagedAccount {
     refreshToken: 'refresh',
     accessToken: 'access',
     expiresAt: Date.now() + 3600000,
+    rateLimitResetTime: 0,
     isHealthy: true,
     failCount: 0,
     lastUsed: 0,
@@ -207,7 +208,7 @@ describe('AccountManager.removeAccount', () => {
     const mgr = new AccountManager([a, b])
     mgr.removeAccount(a)
     expect(mgr.getAccountCount()).toBe(1)
-    expect(mgr.getAccounts()[0].id).toBe('b')
+    expect(mgr.getAccounts()[0]!.id).toBe('b')
   })
 
   test('cursor resets to 0 when list becomes empty', () => {
@@ -239,7 +240,7 @@ describe('AccountManager.addAccount', () => {
     const mgr = new AccountManager([original])
     mgr.addAccount(updated)
     expect(mgr.getAccountCount()).toBe(1)
-    expect(mgr.getAccounts()[0].email).toBe('new@x.com')
+    expect(mgr.getAccounts()[0]!.email).toBe('new@x.com')
   })
 })
 
@@ -319,7 +320,7 @@ describe('AccountManager.addAccount / removeAccount', () => {
     const mgr = new AccountManager([acc])
     mgr.addAccount({ ...acc, email: 'updated@example.com' })
     expect(mgr.getAccountCount()).toBe(1)
-    expect(mgr.getAccounts()[0].email).toBe('updated@example.com')
+    expect(mgr.getAccounts()[0]!.email).toBe('updated@example.com')
   })
 
   test('removeAccount removes the account', () => {

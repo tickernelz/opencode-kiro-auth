@@ -28,11 +28,10 @@ describe('readActiveProfileArnFromKiroCli', () => {
     process.env.KIROCLI_DB_PATH = dbPath
     const db = new Database(dbPath)
     db.run('CREATE TABLE state (key TEXT PRIMARY KEY, value TEXT)')
-    db.run(
-      'INSERT INTO state (key, value) VALUES (?, ?)',
+    db.run('INSERT INTO state (key, value) VALUES (?, ?)', [
       'api.codewhisperer.profile',
       JSON.stringify({ arn: 'arn:aws:codewhisperer:eu-central-1:123:profile/ABC' })
-    )
+    ])
     db.close()
 
     const { readActiveProfileArnFromKiroCli } = await import('../plugin/sync/kiro-cli-profile.js')
@@ -56,11 +55,10 @@ describe('readActiveProfileArnFromKiroCli', () => {
     process.env.KIROCLI_DB_PATH = dbPath
     const db = new Database(dbPath)
     db.run('CREATE TABLE state (key TEXT PRIMARY KEY, value TEXT)')
-    db.run(
-      'INSERT INTO state (key, value) VALUES (?, ?)',
+    db.run('INSERT INTO state (key, value) VALUES (?, ?)', [
       'api.codewhisperer.profile',
       JSON.stringify({ other: 'field' })
-    )
+    ])
     db.close()
 
     const { readActiveProfileArnFromKiroCli } = await import('../plugin/sync/kiro-cli-profile.js')

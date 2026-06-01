@@ -14,8 +14,8 @@ describe('parseBracketToolCalls', () => {
     const text = '[Called bash with args: {"command":"ls"}]'
     const result = parseBracketToolCalls(text)
     expect(result).toHaveLength(1)
-    expect(result[0].name).toBe('bash')
-    expect(result[0].input).toEqual({ command: 'ls' })
+    expect(result[0]!.name).toBe('bash')
+    expect(result[0]!.input).toEqual({ command: 'ls' })
   })
 
   test('parses multiple bracket tool calls', () => {
@@ -23,8 +23,8 @@ describe('parseBracketToolCalls', () => {
       '[Called bash with args: {"command":"ls"}] [Called read with args: {"path":"/tmp"}]'
     const result = parseBracketToolCalls(text)
     expect(result).toHaveLength(2)
-    expect(result[0].name).toBe('bash')
-    expect(result[1].name).toBe('read')
+    expect(result[0]!.name).toBe('bash')
+    expect(result[1]!.name).toBe('read')
   })
 
   test('skips malformed JSON args', () => {
@@ -37,7 +37,7 @@ describe('parseBracketToolCalls', () => {
     const text =
       '[Called bash with args: {"command":"ls"}][Called bash with args: {"command":"pwd"}]'
     const result = parseBracketToolCalls(text)
-    expect(result[0].toolUseId).not.toBe(result[1].toolUseId)
+    expect(result[0]!.toolUseId).not.toBe(result[1]!.toolUseId)
   })
 })
 
@@ -61,7 +61,7 @@ describe('deduplicateToolCalls', () => {
     ]
     const result = deduplicateToolCalls(calls)
     expect(result).toHaveLength(1)
-    expect(result[0].input).toEqual({}) // first one kept
+    expect(result[0]!.input).toEqual({}) // first one kept
   })
 })
 
