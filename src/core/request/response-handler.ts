@@ -34,12 +34,13 @@ export class ResponseHandler {
     conversationId: string
   ): Promise<Response> {
     const s = transformKiroStream(response, model, conversationId)
+    const enc = new TextEncoder()
     return new Response(
       new ReadableStream({
         async start(c) {
           try {
             for await (const e of s) {
-              c.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(e)}\n\n`))
+              c.enqueue(enc.encode(`data: ${JSON.stringify(e)}\n\n`))
             }
             c.close()
           } catch (err) {
@@ -58,12 +59,13 @@ export class ResponseHandler {
     toolNameMapper?: (name: string) => string
   ): Promise<Response> {
     const s = transformSdkStream(sdkResponse, model, conversationId, toolNameMapper)
+    const enc = new TextEncoder()
     return new Response(
       new ReadableStream({
         async start(c) {
           try {
             for await (const e of s) {
-              c.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(e)}\n\n`))
+              c.enqueue(enc.encode(`data: ${JSON.stringify(e)}\n\n`))
             }
             c.close()
           } catch (err) {

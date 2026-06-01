@@ -112,7 +112,7 @@ export class RequestHandler {
         continue
       }
 
-      const sdkPrep = this.prepareSdkRequest(init?.body, model, auth, think, budget, showToast)
+      const sdkPrep = this.prepareSdkRequest(body, model, auth, think, budget, showToast)
 
       const histLen = (sdkPrep.conversationState as any).history?.length || 0
       const agentContId = (sdkPrep.conversationState as any).agentContinuationId || 'none'

@@ -23,6 +23,14 @@ export function createSdkClient(
     return cached.client
   }
 
+  // Token rotated (refresh) — tear down the stale client so its sockets/agent
+  // don't leak before we replace the cache entry.
+  if (cached) {
+    try {
+      cached.client.destroy()
+    } catch {}
+  }
+
   const machineId = getMachineId(auth)
   const token = auth.access
   const client = new CodeWhispererStreamingClient({
