@@ -59,6 +59,12 @@ export const createKiroPlugin =
               limit: { context: 200000, output: 64000 },
               modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
             },
+            'auto-thinking': {
+              name: 'Auto Thinking (1.0x)',
+              reasoning: true,
+              limit: { context: 200000, output: 64000 },
+              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
+            },
             // Claude Sonnet
             'claude-sonnet-4': {
               name: 'Claude Sonnet 4.0 (1.3x)',
@@ -70,8 +76,20 @@ export const createKiroPlugin =
               limit: { context: 200000, output: 64000 },
               modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
             },
+            'claude-sonnet-4-5-thinking': {
+              name: 'Claude Sonnet 4.5 Thinking (1.3x)',
+              reasoning: true,
+              limit: { context: 200000, output: 64000 },
+              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
+            },
             'claude-sonnet-4-6': {
               name: 'Claude Sonnet 4.6 (1.3x)',
+              limit: { context: 1000000, output: 64000 },
+              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
+            },
+            'claude-sonnet-4-6-thinking': {
+              name: 'Claude Sonnet 4.6 Thinking (1.3x)',
+              reasoning: true,
               limit: { context: 1000000, output: 64000 },
               modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
             },
@@ -81,9 +99,21 @@ export const createKiroPlugin =
               limit: { context: 200000, output: 64000 },
               modalities: { input: ['text', 'image'], output: ['text'] }
             },
+            'claude-haiku-4-5-thinking': {
+              name: 'Claude Haiku 4.5 Thinking (0.4x)',
+              reasoning: true,
+              limit: { context: 200000, output: 64000 },
+              modalities: { input: ['text', 'image'], output: ['text'] }
+            },
             // Claude Opus
             'claude-opus-4-5': {
               name: 'Claude Opus 4.5 (2.2x)',
+              limit: { context: 200000, output: 64000 },
+              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
+            },
+            'claude-opus-4-5-thinking': {
+              name: 'Claude Opus 4.5 Thinking (2.2x)',
+              reasoning: true,
               limit: { context: 200000, output: 64000 },
               modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
             },
@@ -92,8 +122,20 @@ export const createKiroPlugin =
               limit: { context: 1000000, output: 64000 },
               modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
             },
+            'claude-opus-4-6-thinking': {
+              name: 'Claude Opus 4.6 Thinking (2.2x)',
+              reasoning: true,
+              limit: { context: 1000000, output: 64000 },
+              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
+            },
             'claude-opus-4-7': {
               name: 'Claude Opus 4.7 (2.2x)',
+              limit: { context: 1000000, output: 64000 },
+              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
+            },
+            'claude-opus-4-7-thinking': {
+              name: 'Claude Opus 4.7 Thinking (2.2x)',
+              reasoning: true,
               limit: { context: 1000000, output: 64000 },
               modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
             },

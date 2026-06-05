@@ -5,6 +5,7 @@ import { resolveKiroModel } from '../plugin/models.js'
 describe('resolveKiroModel', () => {
   test('resolves newly advertised model slugs', () => {
     expect(resolveKiroModel('auto')).toBe('auto')
+    expect(resolveKiroModel('auto-thinking')).toBe('auto')
     expect(resolveKiroModel('deepseek-3.2')).toBe('deepseek-3.2')
     expect(resolveKiroModel('minimax-m2.5')).toBe('minimax-m2.5')
     expect(resolveKiroModel('minimax-m2.1')).toBe('minimax-m2.1')
