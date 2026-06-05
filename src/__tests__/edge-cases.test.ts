@@ -668,6 +668,60 @@ describe('history alternation after trim', () => {
   })
 })
 
+describe('fingerprint stability across image-strip', () => {
+  // Regression: OpenCode strips image parts from the conversation state across
+  // agentic turns. If the fingerprint depended on the full content (incl.
+  // base64 image bytes), the convId cache and the image-carry-forward cache
+  // would both miss after the first turn — which is exactly the bug we saw.
+  test('same first-user-message text produces the same fingerprint with or without image parts', () => {
+    const withImages = transformToSdkRequest(
+      {
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Here is the design' },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+                }
+              }
+            ]
+          }
+        ]
+      },
+      'auto',
+      auth,
+      false,
+      0,
+      undefined,
+      '/ws-fp-stability',
+      false
+    )
+
+    const withoutImages = transformToSdkRequest(
+      {
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: 'Here is the design' }]
+          }
+        ]
+      },
+      'auto',
+      auth,
+      false,
+      0,
+      undefined,
+      '/ws-fp-stability',
+      false
+    )
+
+    expect(withImages.conversationKey.fingerprint).toBe(withoutImages.conversationKey.fingerprint)
+  })
+})
+
 describe('payload trim performance', () => {
   test('trims very large history in <50ms', () => {
     // 200 user/asst pairs of 10KB each = ~4MB raw — would be O(N²) without

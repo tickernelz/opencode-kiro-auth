@@ -18,10 +18,13 @@ import {
   deduplicateToolResults,
   shortenToolName
 } from '../infrastructure/transformers/tool-transformer.js'
+import { imageCache } from './image-cache.js'
 import {
+  MAX_KIRO_IMAGES,
   convertImagesToKiroFormat,
   extractAllImages,
-  extractTextFromParts
+  extractTextFromParts,
+  type KiroImage
 } from './image-handler.js'
 import { resolveKiroModel } from './models.js'
 import { kiroDb } from './storage/sqlite.js'
@@ -84,7 +87,8 @@ function buildCodeWhispererRequest(
   think = false,
   budget = 20000,
   showToast?: ToastFunction,
-  workspace = ''
+  workspace = '',
+  carryForward = true
 ): TransformResult {
   const req = typeof body === 'string' ? JSON.parse(body) : body
   const { messages, tools, system } = req
@@ -108,10 +112,14 @@ function buildCodeWhispererRequest(
   // isNewThread after merge — consecutive same-role messages collapse into one
   const isNewThread = msgs.length <= 1
   const firstUserMsg = msgs.find((m: any) => m.role === 'user')
+  // Fingerprint must be stable across image-stripping by OpenCode on subsequent
+  // turns — using JSON.stringify(content) here would mix in base64 image bytes
+  // and produce a different fingerprint once those parts are gone, breaking
+  // both convId stability and the image-carry-forward cache.
   const firstUserContent = firstUserMsg
     ? typeof firstUserMsg.content === 'string'
       ? firstUserMsg.content
-      : JSON.stringify(firstUserMsg.content)
+      : extractTextFromParts(firstUserMsg.content)
     : ''
   const { convId, agentContinuationId, fingerprint } = deriveConversationIds(
     workspace,
@@ -374,6 +382,28 @@ function buildCodeWhispererRequest(
     }
   }
 
+  // Image carry-forward (runs AFTER trim, on the actual wire state).
+  // Cache whatever images survive the trim; if nothing survives, restore the
+  // most recent set from cache onto currentMessage so the model keeps seeing
+  // them across agentic turns where OpenCode has stripped them upstream.
+  if (carryForward && uim) {
+    const wireImages: KiroImage[] = []
+    if (uim.images && uim.images.length > 0) wireImages.push(...(uim.images as KiroImage[]))
+    for (const h of history) {
+      const imgs = h.userInputMessage?.images as KiroImage[] | undefined
+      if (imgs && imgs.length > 0) wireImages.push(...imgs)
+    }
+
+    if (wireImages.length > 0) {
+      imageCache.upsert(workspace, fingerprint, wireImages)
+    } else {
+      const cached = imageCache.get(workspace, fingerprint)
+      if (cached && cached.length > 0) {
+        uim.images = cached.slice(0, MAX_KIRO_IMAGES)
+      }
+    }
+  }
+
   return {
     request,
     resolved,
@@ -391,7 +421,8 @@ export function transformToCodeWhisperer(
   auth: KiroAuthDetails,
   think = false,
   budget = 20000,
-  workspace = ''
+  workspace = '',
+  carryForward = true
 ): PreparedRequest {
   const { request, resolved, convId } = buildCodeWhispererRequest(
     body,
@@ -400,7 +431,8 @@ export function transformToCodeWhisperer(
     think,
     budget,
     undefined,
-    workspace
+    workspace,
+    carryForward
   )
   const osP = os.platform(),
     osR = os.release(),
@@ -438,7 +470,8 @@ export function transformToSdkRequest(
   think = false,
   budget = 20000,
   showToast?: ToastFunction,
-  workspace = ''
+  workspace = '',
+  carryForward = true
 ): SdkPreparedRequest {
   const { request, resolved, convId, fingerprint, toolNameMapper } = buildCodeWhispererRequest(
     body,
@@ -447,7 +480,8 @@ export function transformToSdkRequest(
     think,
     budget,
     showToast,
-    workspace
+    workspace,
+    carryForward
   )
   return {
     conversationState: request.conversationState,

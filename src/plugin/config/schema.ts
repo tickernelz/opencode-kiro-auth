@@ -70,7 +70,15 @@ export const KiroConfigSchema = z.object({
 
   usage_tracking_enabled: z.boolean().default(true),
   auto_sync_kiro_cli: z.boolean().default(true),
-  enable_log_api_request: z.boolean().default(false)
+  enable_log_api_request: z.boolean().default(false),
+
+  // OpenCode strips image parts from conversation state across agentic turns.
+  // When true, the plugin caches converted images per conversation and re-attaches
+  // them to currentMessage on later turns so the model keeps "seeing" them.
+  // Kiro bills per session (request), not per token, so re-sending the same
+  // images each turn has no billing impact. Only disable if you hit the
+  // per-request 3.75MB image-payload cap on conversations with many heavy images.
+  image_carry_forward: z.boolean().default(true)
 })
 
 export type KiroConfig = z.infer<typeof KiroConfigSchema>
@@ -88,5 +96,6 @@ export const DEFAULT_CONFIG: KiroConfig = {
   auth_server_port_range: 10,
   usage_tracking_enabled: true,
   auto_sync_kiro_cli: true,
-  enable_log_api_request: false
+  enable_log_api_request: false,
+  image_carry_forward: true
 }

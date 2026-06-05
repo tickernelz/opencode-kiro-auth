@@ -3,6 +3,7 @@ import type { AccountRepository } from '../../infrastructure/database/account-re
 import type { AccountManager } from '../../plugin/accounts'
 import type { KiroConfig } from '../../plugin/config'
 import { isPermanentError } from '../../plugin/health'
+import { imageCache } from '../../plugin/image-cache'
 import * as logger from '../../plugin/logger'
 import { transformToSdkRequest } from '../../plugin/request'
 import { createSdkClient } from '../../plugin/sdk-client'
@@ -193,6 +194,9 @@ export class RequestHandler {
           if (httpStatus === 400 && e?.name === 'ValidationException' && !forceNewConversation) {
             const { workspace, fingerprint } = sdkPrep.conversationKey
             kiroDb.deleteConversationId(workspace, fingerprint)
+            // The conversation is starting fresh — drop any carried-forward
+            // images too so the new convId doesn't inherit stale state.
+            imageCache.delete(workspace, fingerprint)
             logger.warn(
               `[REQ] stale conversationId reset, retrying convId=${sdkPrep.conversationId}`
             )
@@ -234,7 +238,16 @@ export class RequestHandler {
     budget: number,
     showToast?: (message: string, variant: 'info' | 'warning' | 'success' | 'error') => void
   ): SdkPreparedRequest {
-    return transformToSdkRequest(body, model, auth, think, budget, showToast, this.workspace)
+    return transformToSdkRequest(
+      body,
+      model,
+      auth,
+      think,
+      budget,
+      showToast,
+      this.workspace,
+      this.config.image_carry_forward
+    )
   }
 
   private handleSuccessfulRequest(acc: ManagedAccount): void {
@@ -250,6 +263,7 @@ export class RequestHandler {
   }
 
   private logSdkRequest(prep: SdkPreparedRequest, acc: ManagedAccount, timestamp: string): void {
+    this.logImageDiagnostic(prep)
     logger.logApiRequest(
       {
         url: `https://q.${prep.region}.amazonaws.com/generateAssistantResponse`,
@@ -269,6 +283,35 @@ export class RequestHandler {
         email: acc.email
       },
       timestamp
+    )
+  }
+
+  // Per-request observability for image-carry-forward. One compact, greppable
+  // line in plugin.log showing where images sit on the wire (currentMessage
+  // vs. each history entry) and their byte sizes.
+  private logImageDiagnostic(prep: SdkPreparedRequest): void {
+    const kb = (bytes: number): number => Math.round(bytes / 1024)
+    const sumBytes = (imgs: { source?: { bytes?: { byteLength?: number } } }[]): number =>
+      imgs.reduce((n, im) => n + (im.source?.bytes?.byteLength ?? 0), 0)
+
+    const cmImgs = prep.conversationState.currentMessage?.userInputMessage?.images ?? []
+    const history = prep.conversationState.history ?? []
+    const histDetail: string[] = []
+    let histImgs = 0
+    let histKb = 0
+    for (let i = 0; i < history.length; i++) {
+      const imgs = history[i]?.userInputMessage?.images ?? []
+      if (imgs.length === 0) continue
+      const entryKb = kb(sumBytes(imgs))
+      histDetail.push(`i=${i}:user:${imgs.length}(${entryKb}KB)`)
+      histImgs += imgs.length
+      histKb += entryKb
+    }
+
+    const detail = histDetail.length ? ` detail=[${histDetail.join(',')}]` : ''
+    logger.log(
+      `[IMG] convId=${prep.conversationId} cur=${cmImgs.length}(${kb(sumBytes(cmImgs))}KB)` +
+        ` hist=${histImgs}/${history.length}(${histKb}KB)${detail}`
     )
   }
 
