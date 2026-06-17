@@ -3,7 +3,12 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ManagedAccount } from '../types'
-import { deduplicateAccounts, mergeAccounts, withDatabaseLock } from './locked-operations'
+import {
+  deduplicateAccounts,
+  mergeAccounts,
+  withDatabaseLock,
+  withInProcessLock
+} from './locked-operations'
 import { runMigrations } from './migrations'
 
 function getBaseDir(): string {
@@ -94,21 +99,11 @@ export class KiroDatabase {
   }
 
   async upsertAccount(acc: ManagedAccount): Promise<void> {
-    await withDatabaseLock(this.path, async () => {
-      const existing = this.getAccounts().map(this.rowToAccount)
-      const merged = mergeAccounts(existing, [acc])
-      const deduplicated = deduplicateAccounts(merged)
-
-      this.db.run('BEGIN TRANSACTION')
-      try {
-        for (const account of deduplicated) {
-          this.upsertAccountInternal(account)
-        }
-        this.db.run('COMMIT')
-      } catch (e) {
-        this.db.run('ROLLBACK')
-        throw e
-      }
+    // Single-account update (hot path: health, rate-limit, token refresh).
+    // Uses the lightweight in-process lock — no file-level lockfile needed here
+    // because this is always a single-process update to one row.
+    await withInProcessLock(() => {
+      this.upsertAccountInternal(acc)
     })
   }
 
@@ -273,11 +268,6 @@ export class KiroDatabase {
       .get(workspace, fingerprint) as
       | { conv_id: string; agent_continuation_id: string | null }
       | undefined
-    if (row) {
-      this.db
-        .prepare('UPDATE conversations SET last_used = ? WHERE workspace = ? AND fingerprint = ?')
-        .run(Date.now(), workspace, fingerprint)
-    }
     return row
       ? { convId: row.conv_id, agentContinuationId: row.agent_continuation_id || '' }
       : undefined
