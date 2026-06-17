@@ -34,7 +34,9 @@ export class TokenRefresher {
     try {
       const newAuth = await refreshAccessToken(auth)
       this.accountManager.updateFromAuth(account, newAuth)
-      await this.repository.batchSave(this.accountManager.getAccounts())
+      // Persist only the updated account instead of all accounts — avoids
+      // invalidating the whole AccountCache on every token refresh.
+      await this.repository.save(account)
       return { account, shouldContinue: false }
     } catch (e: any) {
       return await this.handleRefreshError(e, account, showToast)
