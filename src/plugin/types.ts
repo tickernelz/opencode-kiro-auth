@@ -122,6 +122,9 @@ export interface SdkPreparedRequest {
   conversationId: string
   conversationKey: { workspace: string; fingerprint: string }
   region: string
+  // Resolved endpoint base URL (q.amazonaws.com or runtime.kiro.dev).
+  // Set by transformToSdkRequest so callers and logs can show the real target.
+  endpoint: string
   toolNameMapper?: (name: string) => string
 }
 

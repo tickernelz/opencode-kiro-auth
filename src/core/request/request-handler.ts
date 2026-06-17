@@ -1,4 +1,5 @@
 import { GenerateAssistantResponseCommand } from '@aws/codewhisperer-streaming-client'
+import { THINKING_BUDGETS } from '../../constants'
 import type { AccountRepository } from '../../infrastructure/database/account-repository'
 import type { AccountManager } from '../../plugin/accounts'
 import type { KiroConfig } from '../../plugin/config'
@@ -19,7 +20,9 @@ import { RetryStrategy } from './retry-strategy'
 
 type ToastFunction = (message: string, variant: 'info' | 'warning' | 'success' | 'error') => void
 
-const KIRO_API_PATTERN = /^(https?:\/\/)?q\.[a-z0-9-]+\.amazonaws\.com/
+// Matches both the standard q.amazonaws.com endpoint and the Pro runtime.kiro.dev endpoint
+const KIRO_API_PATTERN =
+  /^(https?:\/\/)?(q\.[a-z0-9-]+\.amazonaws\.com|runtime\.[a-z0-9-]+\.kiro\.dev)/
 const REAUTH_FAILURE_COOLDOWN_MS = 60000
 const REAUTH_TIMEOUT_MS = 90_000
 
@@ -65,8 +68,29 @@ export class RequestHandler {
   ): Promise<Response> {
     const body = init?.body ? JSON.parse(init.body) : {}
     const model = this.extractModel(url) || body.model || 'claude-sonnet-4-5'
-    const think = model.endsWith('-thinking') || !!body.providerOptions?.thinkingConfig
-    const budget = body.providerOptions?.thinkingConfig?.thinkingBudget || 20000
+
+    // Resolve thinking mode + budget.
+    //
+    // Priority order:
+    //   1. Model ID ends with '-thinking'  → adaptive thinking, default budget
+    //   2. providerOptions["kiro-auth"].reasoningEffort  → adaptive mode, effort-based budget
+    //      (OpenCode sends this when the user picks low/medium/high in the UI)
+    //   3. providerOptions.thinkingConfig.thinkingBudget → explicit budget (legacy)
+    //
+    // Budget mapping (Kiro max = 200 000 tokens):
+    //   low → 10 000 | medium → 24 000 | high → 200 000 | default → 16 000
+    const provOpts = body.providerOptions?.['kiro-auth'] ?? body.providerOptions ?? {}
+    const reasoningEffort: string | undefined = provOpts.reasoningEffort
+    const thinkingConfig = body.providerOptions?.thinkingConfig
+
+    const think = model.endsWith('-thinking') || !!reasoningEffort || !!thinkingConfig
+
+    let effort: 'low' | 'medium' | 'high' | 'default' = 'default'
+    if (reasoningEffort === 'low') effort = 'low'
+    else if (reasoningEffort === 'medium') effort = 'medium'
+    else if (reasoningEffort === 'high') effort = 'high'
+
+    const budget: number = thinkingConfig?.thinkingBudget || THINKING_BUDGETS[effort]
 
     let retry = 0
     let consecutiveNullAccounts = 0
@@ -113,7 +137,7 @@ export class RequestHandler {
         continue
       }
 
-      const sdkPrep = this.prepareSdkRequest(body, model, auth, think, budget, showToast)
+      const sdkPrep = this.prepareSdkRequest(body, model, auth, think, budget, showToast, effort)
 
       const histLen = (sdkPrep.conversationState as any).history?.length || 0
       const agentContId = (sdkPrep.conversationState as any).agentContinuationId || 'none'
@@ -147,7 +171,8 @@ export class RequestHandler {
           model,
           sdkPrep.conversationId,
           sdkPrep.streaming,
-          sdkPrep.toolNameMapper
+          sdkPrep.toolNameMapper,
+          think
         )
         logger.debug(`[REQ] done convId=${sdkPrep.conversationId}`)
         return result
@@ -236,7 +261,8 @@ export class RequestHandler {
     auth: KiroAuthDetails,
     think: boolean,
     budget: number,
-    showToast?: (message: string, variant: 'info' | 'warning' | 'success' | 'error') => void
+    showToast?: (message: string, variant: 'info' | 'warning' | 'success' | 'error') => void,
+    effort: 'low' | 'medium' | 'high' | 'default' = 'default'
   ): SdkPreparedRequest {
     return transformToSdkRequest(
       body,
@@ -246,19 +272,20 @@ export class RequestHandler {
       budget,
       showToast,
       this.workspace,
-      this.config.image_carry_forward
+      this.config.image_carry_forward,
+      effort
     )
   }
 
   private handleSuccessfulRequest(acc: ManagedAccount): void {
-    if (acc.failCount && acc.failCount > 0) {
-      if (!isPermanentError(acc.unhealthyReason)) {
-        acc.failCount = 0
-        acc.isHealthy = true
-        delete acc.unhealthyReason
-        delete acc.recoveryTime
-        this.repository.save(acc).catch(() => {})
-      }
+    // Only write to DB if the account was actually degraded — avoids a
+    // withDatabaseLock + full merge/dedup round-trip on every healthy request.
+    if (acc.failCount && acc.failCount > 0 && !isPermanentError(acc.unhealthyReason)) {
+      acc.failCount = 0
+      acc.isHealthy = true
+      delete acc.unhealthyReason
+      delete acc.recoveryTime
+      this.repository.save(acc).catch(() => {})
     }
   }
 
@@ -266,7 +293,7 @@ export class RequestHandler {
     this.logImageDiagnostic(prep)
     logger.logApiRequest(
       {
-        url: `https://q.${prep.region}.amazonaws.com/generateAssistantResponse`,
+        url: `${prep.endpoint}/generateAssistantResponse`,
         method: 'POST',
         headers: { 'x-amzn-kiro-agent-mode': 'vibe' },
         body: {
@@ -286,9 +313,6 @@ export class RequestHandler {
     )
   }
 
-  // Per-request observability for image-carry-forward. One compact, greppable
-  // line in plugin.log showing where images sit on the wire (currentMessage
-  // vs. each history entry) and their byte sizes.
   private logImageDiagnostic(prep: SdkPreparedRequest): void {
     const kb = (bytes: number): number => Math.round(bytes / 1024)
     const sumBytes = (imgs: { source?: { bytes?: { byteLength?: number } } }[]): number =>
@@ -346,7 +370,7 @@ export class RequestHandler {
     if (!this.config.enable_log_api_request) {
       logger.logApiError(
         {
-          url: `https://q.${prep.region}.amazonaws.com/generateAssistantResponse`,
+          url: `${prep.endpoint}/generateAssistantResponse`,
           method: 'POST',
           headers: {},
           body: null,

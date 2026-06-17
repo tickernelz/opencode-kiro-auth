@@ -38,7 +38,12 @@ export function extractRegionFromArn(arn: string | undefined): KiroRegion | unde
 export const KIRO_CONSTANTS = {
   REFRESH_URL: 'https://prod.{{region}}.auth.desktop.kiro.dev/refreshToken',
   REFRESH_IDC_URL: 'https://oidc.{{region}}.amazonaws.com/token',
+  // Standard endpoint — works for all accounts (Builder ID + Pro)
   BASE_URL: 'https://q.{{region}}.amazonaws.com/generateAssistantResponse',
+  // Pro/runtime endpoint — Pro accounts with a profileArn use this; it serves
+  // additional models (glm-5, minimax, etc.) not available on the standard endpoint.
+  // Free Builder ID accounts (no profileArn) must NOT use this — it returns 400.
+  RUNTIME_URL: 'https://runtime.{{region}}.kiro.dev/generateAssistantResponse',
   USAGE_LIMITS_URL: 'https://q.{{region}}.amazonaws.com/getUsageLimits',
   DEFAULT_REGION: 'us-east-1' as KiroRegion,
   AXIOS_TIMEOUT: 120000,
@@ -48,6 +53,18 @@ export const KIRO_CONSTANTS = {
   CHAT_TRIGGER_TYPE_MANUAL: 'MANUAL',
   ORIGIN_AI_EDITOR: 'AI_EDITOR'
 }
+
+// Thinking budgets per effort level (tokens).
+// Kiro's max_thinking_length cap is 200 000.
+export const THINKING_BUDGETS = {
+  low: 10_000,
+  medium: 24_000,
+  high: 200_000,
+  // Default when thinking is on but no effort level is specified (-thinking suffix)
+  default: 16_000
+} as const
+
+export type ThinkingEffort = keyof typeof THINKING_BUDGETS
 
 export const MODEL_MAPPING: Record<string, string> = {
   // Claude Haiku
@@ -76,6 +93,7 @@ export const MODEL_MAPPING: Record<string, string> = {
   'claude-opus-4-8-thinking': 'claude-opus-4.8',
   // Auto
   auto: 'auto',
+  'auto-thinking': 'auto',
   // Open weight models
   'deepseek-3.2': 'deepseek-3.2',
   'glm-5': 'glm-5',

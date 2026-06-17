@@ -20,10 +20,17 @@ export class ResponseHandler {
     model: string,
     conversationId: string,
     streaming: boolean,
-    toolNameMapper?: (name: string) => string
+    toolNameMapper?: (name: string) => string,
+    thinkingRequested = false
   ): Promise<Response> {
     if (streaming) {
-      return this.handleSdkStreaming(sdkResponse, model, conversationId, toolNameMapper)
+      return this.handleSdkStreaming(
+        sdkResponse,
+        model,
+        conversationId,
+        toolNameMapper,
+        thinkingRequested
+      )
     }
     return this.handleSdkNonStreaming(sdkResponse, model, conversationId)
   }
@@ -56,9 +63,16 @@ export class ResponseHandler {
     sdkResponse: any,
     model: string,
     conversationId: string,
-    toolNameMapper?: (name: string) => string
+    toolNameMapper?: (name: string) => string,
+    thinkingRequested = false
   ): Promise<Response> {
-    const s = transformSdkStream(sdkResponse, model, conversationId, toolNameMapper)
+    const s = transformSdkStream(
+      sdkResponse,
+      model,
+      conversationId,
+      toolNameMapper,
+      thinkingRequested
+    )
     const enc = new TextEncoder()
     return new Response(
       new ReadableStream({

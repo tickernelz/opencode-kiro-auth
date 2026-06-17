@@ -27,6 +27,7 @@ import {
   type KiroImage
 } from './image-handler.js'
 import { resolveKiroModel } from './models.js'
+import { resolveKiroEndpoint } from './sdk-client.js'
 import { kiroDb } from './storage/sqlite.js'
 import type {
   CodeWhispererRequest,
@@ -85,10 +86,11 @@ function buildCodeWhispererRequest(
   model: string,
   auth: KiroAuthDetails,
   think = false,
-  budget = 20000,
+  budget = 16000,
   showToast?: ToastFunction,
   workspace = '',
-  carryForward = true
+  carryForward = true,
+  effort: 'low' | 'medium' | 'high' | 'default' = 'default'
 ): TransformResult {
   const req = typeof body === 'string' ? JSON.parse(body) : body
   const { messages, tools, system } = req
@@ -102,7 +104,19 @@ function buildCodeWhispererRequest(
     sys = sys ? `${sys}\n\n${extractedSystem}` : extractedSystem
   }
   if (think) {
-    const pfx = `<thinking_mode>enabled</thinking_mode><max_thinking_length>${budget}</max_thinking_length>`
+    // Use adaptive mode with explicit effort when the user picked a level,
+    // otherwise fall back to the enabled/max_thinking_length form.
+    //
+    // adaptive + thinking_effort: Kiro decides the thinking depth within the
+    // effort band. This is the modern approach used by kiro-gateway and others.
+    //
+    // enabled + max_thinking_length: legacy explicit budget cap.
+    let pfx: string
+    if (effort !== 'default') {
+      pfx = `<thinking_mode>adaptive</thinking_mode><thinking_effort>${effort}</thinking_effort>`
+    } else {
+      pfx = `<thinking_mode>enabled</thinking_mode><max_thinking_length>${budget}</max_thinking_length>`
+    }
     sys = sys.includes('<thinking_mode>') ? sys : sys ? `${pfx}\n${sys}` : pfx
   }
   const msgs = mergeAdjacentMessages([...otherMsgs])
@@ -420,9 +434,10 @@ export function transformToCodeWhisperer(
   model: string,
   auth: KiroAuthDetails,
   think = false,
-  budget = 20000,
+  budget = 16000,
   workspace = '',
-  carryForward = true
+  carryForward = true,
+  effort: 'low' | 'medium' | 'high' | 'default' = 'default'
 ): PreparedRequest {
   const { request, resolved, convId } = buildCodeWhispererRequest(
     body,
@@ -432,7 +447,8 @@ export function transformToCodeWhisperer(
     budget,
     undefined,
     workspace,
-    carryForward
+    carryForward,
+    effort
   )
   const osP = os.platform(),
     osR = os.release(),
@@ -468,10 +484,11 @@ export function transformToSdkRequest(
   model: string,
   auth: KiroAuthDetails,
   think = false,
-  budget = 20000,
+  budget = 16000,
   showToast?: ToastFunction,
   workspace = '',
-  carryForward = true
+  carryForward = true,
+  effort: 'low' | 'medium' | 'high' | 'default' = 'default'
 ): SdkPreparedRequest {
   const { request, resolved, convId, fingerprint, toolNameMapper } = buildCodeWhispererRequest(
     body,
@@ -481,8 +498,14 @@ export function transformToSdkRequest(
     budget,
     showToast,
     workspace,
-    carryForward
+    carryForward,
+    effort
   )
+  const region = extractRegionFromArn(auth.profileArn) ?? auth.region
+  // resolveKiroEndpoint returns the full URL including /generateAssistantResponse.
+  // Strip the path so the endpoint field holds only the base (what the SDK uses).
+  const endpointFull = resolveKiroEndpoint(auth)
+  const endpoint = endpointFull.replace(/\/generateAssistantResponse$/, '')
   return {
     conversationState: request.conversationState,
     profileArn: request.profileArn,
@@ -490,7 +513,8 @@ export function transformToSdkRequest(
     effectiveModel: resolved,
     conversationId: convId,
     conversationKey: { workspace, fingerprint },
-    region: extractRegionFromArn(auth.profileArn) ?? auth.region,
+    region,
+    endpoint,
     toolNameMapper
   }
 }

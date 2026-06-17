@@ -12,10 +12,9 @@ export async function* transformSdkStream(
   sdkResponse: any,
   model: string,
   conversationId: string,
-  toolNameMapper?: (name: string) => string
+  toolNameMapper?: (name: string) => string,
+  thinkingRequested = false
 ): AsyncGenerator<any> {
-  const thinkingRequested = true
-
   const streamState: StreamState = {
     thinkingRequested,
     buffer: '',
