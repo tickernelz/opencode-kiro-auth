@@ -1,0 +1,67 @@
+name: Build and publish tarball
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  tarball:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install
+
+      - run: bun run typecheck
+
+      - run: bun run build
+
+      - name: Pack tarball
+        run: npm pack
+
+      - name: Rename tarball to fixed name
+        run: mv *.tgz opencode-kiro-auth.tgz
+
+      - name: Check if release exists
+        id: check_release
+        run: |
+          if gh release view "_master" --json isPrerelease --jq '.isPrerelease'; then
+            echo "release_exists=true" >> $GITHUB_ENV
+          else
+            echo "release_exists=false" >> $GITHUB_ENV
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete existing prerelease and tag
+        if: env.release_exists == 'true'
+        run: |
+          gh release delete _master --cleanup-tag --yes
+          while git fetch --tags --prune-tags; git tag -l | grep _master; do
+            sleep 2; printf "still waiting...\n"
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release
+        run: |
+          gh release create "_master" \
+            --target master \
+            --prerelease \
+            --title "Nightly Build master" \
+            --notes "Nightly build. Commit: ${{ github.sha }}"
+          echo "release_exists=true" >> $GITHUB_ENV
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload tarball
+        if: env.release_exists == 'true'
+        run: gh release upload "_master" opencode-kiro-auth.tgz
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
