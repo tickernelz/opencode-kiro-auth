@@ -1,5 +1,5 @@
 import type { AuthOuathResult } from '@opencode-ai/plugin'
-import { exec } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { extractRegionFromArn, normalizeRegion } from '../../constants.js'
 import type { AccountRepository } from '../../infrastructure/database/account-repository.js'
 import { authorizeKiroIDC, pollKiroIDCToken } from '../../kiro/oauth-idc.js'
@@ -11,15 +11,14 @@ import type { KiroRegion, ManagedAccount } from '../../plugin/types.js'
 import { fetchUsageLimits } from '../../plugin/usage.js'
 
 const openBrowser = (url: string) => {
-  const escapedUrl = url.replace(/"/g, '\\"')
   const platform = process.platform
-  const cmd =
+  const [bin, ...args] =
     platform === 'win32'
-      ? `cmd /c start "" "${escapedUrl}"`
+      ? ['cmd', '/c', 'start', '', url]
       : platform === 'darwin'
-        ? `open "${escapedUrl}"`
-        : `xdg-open "${escapedUrl}"`
-  exec(cmd, (error) => {
+        ? ['open', url]
+        : ['xdg-open', url]
+  execFile(bin!, args, (error) => {
     if (error) logger.warn(`Browser error: ${error.message}`)
   })
 }
