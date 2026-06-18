@@ -1,4 +1,15 @@
 import { describe, expect, mock, test } from 'bun:test'
+
+mock.module('../plugin/sync/kiro-cli.js', () => ({
+  syncFromKiroCli: () => Promise.resolve(),
+  writeToKiroCli: () => Promise.resolve()
+}))
+mock.module('../kiro/auth.js', () => ({
+  decodeRefreshToken: (t: string) => ({ refreshToken: t }),
+  encodeRefreshToken: (p: any) => p.refreshToken,
+  accessTokenExpired: () => false
+}))
+
 import { AuthHandler } from '../core/auth/auth-handler.js'
 import type { KiroAuthDetails, ManagedAccount } from '../plugin/types.js'
 

@@ -12,11 +12,13 @@ mock.module('../plugin/storage/sqlite.js', () => ({
   }
 }))
 mock.module('../plugin/sync/kiro-cli.js', () => ({
+  syncFromKiroCli: () => Promise.resolve(),
   writeToKiroCli: () => Promise.resolve()
 }))
 mock.module('../kiro/auth.js', () => ({
   decodeRefreshToken: (t: string) => ({ refreshToken: t }),
-  encodeRefreshToken: (p: any) => p.refreshToken
+  encodeRefreshToken: (p: any) => p.refreshToken,
+  accessTokenExpired: () => false
 }))
 
 function makeAccount(overrides: Partial<ManagedAccount> = {}): ManagedAccount {

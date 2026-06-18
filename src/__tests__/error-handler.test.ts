@@ -11,10 +11,14 @@ mock.module('../plugin/storage/sqlite.js', () => ({
     batchUpsertAccounts: () => Promise.resolve()
   }
 }))
-mock.module('../plugin/sync/kiro-cli.js', () => ({ writeToKiroCli: () => Promise.resolve() }))
+mock.module('../plugin/sync/kiro-cli.js', () => ({
+  syncFromKiroCli: () => Promise.resolve(),
+  writeToKiroCli: () => Promise.resolve()
+}))
 mock.module('../kiro/auth.js', () => ({
   decodeRefreshToken: (t: string) => ({ refreshToken: t }),
-  encodeRefreshToken: (p: any) => p.refreshToken
+  encodeRefreshToken: (p: any) => p.refreshToken,
+  accessTokenExpired: () => false
 }))
 
 const defaultConfig = { rate_limit_max_retries: 3, rate_limit_retry_delay_ms: 100 }
