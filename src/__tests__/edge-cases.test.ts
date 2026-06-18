@@ -29,6 +29,7 @@ import {
   deduplicateToolCallsByContent,
   shortenToolName
 } from '../infrastructure/transformers/tool-transformer.js'
+import { imageCache } from '../plugin/image-cache.js'
 import { transformToSdkRequest } from '../plugin/request.js'
 import type { KiroAuthDetails } from '../plugin/types.js'
 
@@ -719,6 +720,79 @@ describe('fingerprint stability across image-strip', () => {
     )
 
     expect(withImages.conversationKey.fingerprint).toBe(withoutImages.conversationKey.fingerprint)
+  })
+})
+
+describe('image carry-forward: no images on tool-result turns', () => {
+  function seedCache(workspace: string, firstUserText: string) {
+    const crypto = require('crypto')
+    const fingerprint = crypto
+      .createHash('sha256')
+      .update(workspace + '\0' + firstUserText)
+      .digest('hex')
+      .slice(0, 32)
+    imageCache.set(workspace, fingerprint, [
+      { format: 'png', source: { bytes: new Uint8Array([137, 80, 78, 71]) } }
+    ])
+  }
+
+  test('images are NOT carried forward onto a tool-result turn', () => {
+    const workspace = '/ws-carry-fwd-toolresult'
+    seedCache(workspace, 'look at this')
+
+    const result = transformToSdkRequest(
+      {
+        messages: [
+          { role: 'user', content: [{ type: 'text', text: 'look at this' }] },
+          {
+            role: 'assistant',
+            content: [
+              { type: 'tool_use', id: 'tu_1', name: 'think', input: { thought: 'thinking' } }
+            ]
+          },
+          {
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: 'tu_1', content: 'done' }]
+          }
+        ]
+      },
+      'auto',
+      auth,
+      false,
+      0,
+      undefined,
+      workspace,
+      true
+    )
+
+    const uim = result.conversationState.currentMessage?.userInputMessage as any
+    expect((uim?.userInputMessageContext?.toolResults ?? []).length).toBeGreaterThan(0)
+    expect((uim?.images ?? []).length).toBe(0)
+  })
+
+  test('images ARE carried forward on a normal (non-tool-result) turn', () => {
+    const workspace = '/ws-carry-fwd-normal'
+    seedCache(workspace, 'look at this')
+
+    const result = transformToSdkRequest(
+      {
+        messages: [
+          { role: 'user', content: [{ type: 'text', text: 'look at this' }] },
+          { role: 'assistant', content: 'I see it.' },
+          { role: 'user', content: 'What color is it?' }
+        ]
+      },
+      'auto',
+      auth,
+      false,
+      0,
+      undefined,
+      workspace,
+      true
+    )
+
+    const uim = result.conversationState.currentMessage?.userInputMessage as any
+    expect((uim?.images ?? []).length).toBeGreaterThan(0)
   })
 })
 

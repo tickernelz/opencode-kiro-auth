@@ -396,10 +396,8 @@ function buildCodeWhispererRequest(
     }
   }
 
-  // Image carry-forward (runs AFTER trim, on the actual wire state).
-  // Cache whatever images survive the trim; if nothing survives, restore the
-  // most recent set from cache onto currentMessage so the model keeps seeing
-  // them across agentic turns where OpenCode has stripped them upstream.
+  // Image carry-forward: cache surviving images; on turns without fresh images,
+  // restore from cache — but never onto a tool-result turn (Kiro 400 on images+toolResults).
   if (carryForward && uim) {
     const wireImages: KiroImage[] = []
     if (uim.images && uim.images.length > 0) wireImages.push(...(uim.images as KiroImage[]))
@@ -411,9 +409,12 @@ function buildCodeWhispererRequest(
     if (wireImages.length > 0) {
       imageCache.upsert(workspace, fingerprint, wireImages)
     } else {
-      const cached = imageCache.get(workspace, fingerprint)
-      if (cached && cached.length > 0) {
-        uim.images = cached.slice(0, MAX_KIRO_IMAGES)
+      const hasToolResults = (uim.userInputMessageContext?.toolResults?.length ?? 0) > 0
+      if (!hasToolResults) {
+        const cached = imageCache.get(workspace, fingerprint)
+        if (cached && cached.length > 0) {
+          uim.images = cached.slice(0, MAX_KIRO_IMAGES)
+        }
       }
     }
   }
