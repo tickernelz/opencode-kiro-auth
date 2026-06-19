@@ -173,11 +173,14 @@ describe('transformSdkStream: tool call streaming', () => {
     ]
     const sdk = makeSdkResponse(events)
     const result = await collectSdk(transformSdkStream(sdk, 'auto', 'conv-1'))
-    const toolBlock = result.find(
-      (e) => e.choices?.[0]?.delta?.tool_calls?.[0]?.function?.arguments
-    )
-    expect(toolBlock).toBeDefined()
-    const args = JSON.parse(toolBlock.choices[0].delta.tool_calls[0].function.arguments)
+
+    // With inline streaming, args arrive as multiple partial_json deltas.
+    // Collect all argument chunks for this tool and concatenate.
+    const argChunks = result
+      .filter((e) => e.choices?.[0]?.delta?.tool_calls?.[0]?.function?.arguments !== undefined)
+      .map((e: any) => e.choices[0].delta.tool_calls[0].function.arguments)
+      .join('')
+    const args = JSON.parse(argChunks)
     expect(args.filePath).toBe('/tmp/x.txt')
     expect(args.content).toBe('hello')
   })
@@ -192,6 +195,73 @@ describe('transformSdkStream: tool call streaming', () => {
     const result = await collectSdk(transformSdkStream(sdk, 'auto', 'conv-1'))
     const toolBlocks = result.filter((e) => e.choices?.[0]?.delta?.tool_calls?.[0]?.function?.name)
     expect(toolBlocks.length).toBe(2)
+  })
+
+  test('truncated tool call (no stop event) closes the block and emits error text', async () => {
+    // Simulates Kiro cutting the stream mid-tool-call (large .frm JSON that
+    // exceeds the response size limit).
+    // With inline streaming: content_block_start IS emitted (tool name visible),
+    // then on truncation the block is closed and an error text is appended.
+    const events = [
+      { assistantResponseEvent: { content: 'I will edit the file.' } },
+      {
+        toolUseEvent: {
+          toolUseId: 't-trunc',
+          name: 'replaceFileContent',
+          input: '{"path":"/app.frm","content":{"forms":[{"name":"form1"'
+        }
+      }
+      // note: no stop event — stream cut off mid-JSON
+    ]
+    const sdk = makeSdkResponse(events)
+    const result = await collectSdk(transformSdkStream(sdk, 'auto', 'conv-1'))
+
+    // content_block_start IS emitted (inline streaming — tool name is immediately visible)
+    const toolNameBlocks = result.filter(
+      (e) => e.choices?.[0]?.delta?.tool_calls?.[0]?.function?.name
+    )
+    expect(toolNameBlocks.length).toBeGreaterThan(0)
+    expect(toolNameBlocks[0]!.choices[0].delta.tool_calls[0].function.name).toBe(
+      'replaceFileContent'
+    )
+
+    // Must emit a text delta explaining the truncation
+    const allText = result
+      .filter((e) => e.choices?.[0]?.delta?.content)
+      .map((e: any) => e.choices[0].delta.content)
+      .join('')
+    expect(allText).toContain('truncated')
+    expect(allText).toContain('replaceFileContent')
+  })
+
+  test('tool input is NOT accumulated into totalContent — bracket parser never sees large JSON', async () => {
+    // Regression: previously `totalContent += tc.input` caused catastrophic
+    // regex backtracking when the tool input was hundreds of KB of JSON.
+    const largeInput = JSON.stringify(
+      Array.from({ length: 100 }, (_, i) => ({ id: i, value: 'x'.repeat(500) }))
+    )
+    const events = [
+      {
+        toolUseEvent: {
+          toolUseId: 't-big',
+          name: 'write',
+          input: largeInput.slice(0, largeInput.length / 2)
+        }
+      },
+      { toolUseEvent: { toolUseId: 't-big', input: largeInput.slice(largeInput.length / 2) } },
+      { toolUseEvent: { toolUseId: 't-big', stop: true } }
+    ]
+    const sdk = makeSdkResponse(events)
+    const start = performance.now()
+    const result = await collectSdk(transformSdkStream(sdk, 'auto', 'conv-1'))
+    const elapsed = performance.now() - start
+
+    // Must complete in well under 1s — would hang for seconds with catastrophic backtracking
+    expect(elapsed).toBeLessThan(500)
+
+    // Tool call must still be emitted correctly
+    const toolBlocks = result.filter((e) => e.choices?.[0]?.delta?.tool_calls?.[0]?.function?.name)
+    expect(toolBlocks.length).toBeGreaterThan(0)
   })
 })
 

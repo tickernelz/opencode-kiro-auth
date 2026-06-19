@@ -168,11 +168,13 @@ export async function* transformKiroStream(
               currentToolCall = {
                 toolUseId: tc.toolUseId,
                 name: tc.name,
-                input: tc.input || ''
+                input: tc.input || '',
+                stopped: false
               }
             }
 
             if (tc.stop && currentToolCall) {
+              currentToolCall.stopped = true
               toolCalls.push(currentToolCall)
               currentToolCall = null
             }
@@ -227,13 +229,16 @@ export async function* transformKiroStream(
       if (_c !== null) yield _c
     }
 
-    const bracketToolCalls = parseBracketToolCalls(totalContent)
+    const bracketToolCalls = totalContent.includes('[Called ')
+      ? parseBracketToolCalls(totalContent)
+      : []
     if (bracketToolCalls.length > 0) {
       for (const btc of bracketToolCalls) {
         toolCalls.push({
           toolUseId: btc.toolUseId,
           name: btc.name,
-          input: typeof btc.input === 'string' ? btc.input : JSON.stringify(btc.input)
+          input: typeof btc.input === 'string' ? btc.input : JSON.stringify(btc.input),
+          stopped: true
         })
       }
     }

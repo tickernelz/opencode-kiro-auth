@@ -65,6 +65,33 @@ describe('deduplicateToolCalls', () => {
   })
 })
 
+describe('parseBracketToolCalls: large JSON content (catastrophic backtracking guard)', () => {
+  test('returns empty array fast when "[Called " is absent — even with huge JSON', () => {
+    // A 500 KB JSON array with many nested braces — previously caused catastrophic
+    // backtracking in the regex. The short-circuit guard must make this instant.
+    const largeJson = JSON.stringify(
+      Array.from({ length: 200 }, (_, i) => ({
+        id: i,
+        data: 'x'.repeat(1000),
+        nested: { a: 1, b: [1, 2, 3] }
+      }))
+    )
+    const start = performance.now()
+    const result = parseBracketToolCalls(largeJson)
+    const elapsed = performance.now() - start
+    expect(result).toHaveLength(0)
+    expect(elapsed).toBeLessThan(50) // must be near-instant, not seconds
+  })
+
+  test('still finds bracket tool calls when "[Called " is present in large text', () => {
+    const prefix = 'x'.repeat(10000)
+    const text = `${prefix}[Called bash with args: {"command":"ls"}]${prefix}`
+    const result = parseBracketToolCalls(text)
+    expect(result).toHaveLength(1)
+    expect(result[0]!.name).toBe('bash')
+  })
+})
+
 describe('cleanToolCallsFromText', () => {
   test('removes bracket tool call from text', () => {
     const text = 'Here is the result [Called bash with args: {"command":"ls"}] done.'

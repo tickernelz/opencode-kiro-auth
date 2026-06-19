@@ -46,10 +46,12 @@ export async function syncFromKiroCli() {
 
         const isIdc = row.key.includes('odic')
         const authMethod = isIdc ? 'idc' : 'desktop'
-        const oidcRegion = normalizeRegion(data.region)
         let profileArn: string | undefined = data.profile_arn || data.profileArn
         if (!profileArn && isIdc) profileArn = activeProfileArn || readActiveProfileArnFromKiroCli()
-        const serviceRegion = extractRegionFromArn(profileArn) || oidcRegion
+        // serviceRegion wins over data.region: kiro-cli stores data.region as the
+        // OIDC region (often us-east-1) regardless of where the account actually lives.
+        const serviceRegion = extractRegionFromArn(profileArn) || normalizeRegion(data.region)
+        const oidcRegion = serviceRegion
         const startUrl: string | undefined =
           typeof data.start_url === 'string'
             ? data.start_url

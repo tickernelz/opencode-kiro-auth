@@ -61,8 +61,14 @@ export class IdcAuthMethod {
     const invokedWithoutPrompts = !inputs || Object.keys(inputs).length === 0
 
     const startUrl = normalizeStartUrl(inputs?.start_url || this.config.idc_start_url) || undefined
-    const oidcRegion: KiroRegion = normalizeRegion(inputs?.idc_region || this.config.idc_region)
+    // For the OIDC device-code flow, prefer explicit idc_region, then fall back to
+    // the region from a pre-configured profileArn, then default_region. This ensures
+    // accounts with a eu-central-1 profileArn don't hit oidc.us-east-1.amazonaws.com.
     const configuredProfileArn = this.config.idc_profile_arn
+    const arnRegion = extractRegionFromArn(configuredProfileArn)
+    const oidcRegion: KiroRegion = normalizeRegion(
+      inputs?.idc_region || this.config.idc_region || arnRegion || configuredServiceRegion
+    )
     logger.log('IDC authorize: resolved defaults', {
       hasInputs: !!inputs && Object.keys(inputs).length > 0,
       invokedWithoutPrompts,
@@ -160,7 +166,7 @@ export class IdcAuthMethod {
             email,
             authMethod: 'idc',
             region: serviceRegion,
-            oidcRegion,
+            oidcRegion: oidcRegion,
             clientId: token.clientId,
             clientSecret: token.clientSecret,
             profileArn,

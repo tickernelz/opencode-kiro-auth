@@ -130,21 +130,82 @@ export async function* transformSdkStream(
         }
       } else if (event.toolUseEvent) {
         const tc = event.toolUseEvent
+        // Only accumulate the tool *name* into totalContent — the input JSON is
+        // never bracket-format and can be hundreds of KB; including it causes
+        // catastrophic backtracking in parseBracketToolCalls.
         if (tc.name) totalContent += tc.name
-        if (tc.input) totalContent += tc.input
 
         if (tc.toolUseId) {
           if (currentToolCall && currentToolCall.toolUseId === tc.toolUseId) {
             currentToolCall.input += tc.input || ''
+            if (tc.input) {
+              const _c = convertToOpenAI(
+                {
+                  type: 'content_block_delta',
+                  index: currentToolCall.blockIndex,
+                  delta: { type: 'input_json_delta', partial_json: tc.input }
+                },
+                conversationId,
+                model
+              )
+              if (_c !== null) yield _c
+            }
           } else if (tc.name) {
             if (currentToolCall) toolCalls.push(currentToolCall)
+            for (const ev of stopBlock(streamState.textBlockIndex, streamState)) {
+              const _c = convertToOpenAI(ev, conversationId, model)
+              if (_c !== null) yield _c
+            }
+            const blockIndex = streamState.nextBlockIndex++
             currentToolCall = {
               toolUseId: tc.toolUseId,
               name: toolNameMapper ? toolNameMapper(tc.name) : tc.name,
-              input: tc.input || ''
+              input: tc.input || '',
+              stopped: false,
+              blockIndex
+            }
+            {
+              const _c = convertToOpenAI(
+                {
+                  type: 'content_block_start',
+                  index: blockIndex,
+                  content_block: {
+                    type: 'tool_use',
+                    id: tc.toolUseId,
+                    name: currentToolCall.name,
+                    input: {}
+                  }
+                },
+                conversationId,
+                model
+              )
+              if (_c !== null) yield _c
+            }
+            if (tc.input) {
+              const _c = convertToOpenAI(
+                {
+                  type: 'content_block_delta',
+                  index: blockIndex,
+                  delta: { type: 'input_json_delta', partial_json: tc.input }
+                },
+                conversationId,
+                model
+              )
+              if (_c !== null) yield _c
             }
           }
           if (tc.stop && currentToolCall) {
+            currentToolCall.stopped = true
+            // The AI SDK dispatches tools on message_delta, not on block stop,
+            // so closing inline is safe and lets the client show progress immediately.
+            {
+              const _c = convertToOpenAI(
+                { type: 'content_block_stop', index: currentToolCall.blockIndex },
+                conversationId,
+                model
+              )
+              if (_c !== null) yield _c
+            }
             toolCalls.push(currentToolCall)
             currentToolCall = null
           }
@@ -172,7 +233,27 @@ export async function* transformSdkStream(
     }
 
     if (currentToolCall) {
+      // Stream cut off mid-tool-call. Close the open block so the event stream
+      // is well-formed, then append a visible error so the model can recover.
+      logger.debug(
+        `[STREAM] Truncated tool call: name=${currentToolCall.name} id=${currentToolCall.toolUseId} inputLen=${currentToolCall.input.length}`
+      )
+      if (currentToolCall.blockIndex !== undefined) {
+        const _c = convertToOpenAI(
+          { type: 'content_block_stop', index: currentToolCall.blockIndex },
+          conversationId,
+          model
+        )
+        if (_c !== null) yield _c
+      }
       toolCalls.push(currentToolCall)
+      for (const ev of createTextDeltaEvents(
+        `\n\n[Kiro: tool call "${currentToolCall.name}" was truncated mid-stream — the response was too large. Try a smaller operation or split the task.]`,
+        streamState
+      )) {
+        const _c = convertToOpenAI(ev, conversationId, model)
+        if (_c !== null) yield _c
+      }
       currentToolCall = null
     }
 
@@ -205,25 +286,32 @@ export async function* transformSdkStream(
       if (_c !== null) yield _c
     }
 
-    const bracketToolCalls = parseBracketToolCalls(totalContent)
+    const bracketToolCalls = totalContent.includes('[Called ')
+      ? parseBracketToolCalls(totalContent)
+      : []
     if (bracketToolCalls.length > 0) {
       for (const btc of bracketToolCalls) {
         toolCalls.push({
           toolUseId: btc.toolUseId,
           name: btc.name,
-          input: typeof btc.input === 'string' ? btc.input : JSON.stringify(btc.input)
+          input: typeof btc.input === 'string' ? btc.input : JSON.stringify(btc.input),
+          stopped: true
+          // no blockIndex — these are emitted post-stream below
         })
       }
     }
 
     const dedupedToolCalls = deduplicateToolCallsByContent(toolCalls)
 
-    if (dedupedToolCalls.length > 0) {
-      const baseIndex = streamState.nextBlockIndex
-      for (let i = 0; i < dedupedToolCalls.length; i++) {
-        const tc = dedupedToolCalls[i]
+    // SDK tool calls were already emitted inline (content_block_start/delta/stop
+    // during streaming). Only bracket-format tool calls (blockIndex undefined)
+    // need to be emitted here.
+    const postStreamCalls = dedupedToolCalls.filter((tc) => tc.blockIndex === undefined)
+    if (postStreamCalls.length > 0) {
+      for (let i = 0; i < postStreamCalls.length; i++) {
+        const tc = postStreamCalls[i]
         if (!tc) continue
-        const blockIndex = baseIndex + i
+        const blockIndex = streamState.nextBlockIndex++
 
         {
           const _c = convertToOpenAI(
@@ -259,10 +347,7 @@ export async function* transformSdkStream(
             {
               type: 'content_block_delta',
               index: blockIndex,
-              delta: {
-                type: 'input_json_delta',
-                partial_json: inputJson
-              }
+              delta: { type: 'input_json_delta', partial_json: inputJson }
             },
             conversationId,
             model
