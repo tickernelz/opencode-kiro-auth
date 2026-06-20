@@ -294,7 +294,14 @@ Edit `~/.config/opencode/kiro.json`:
   "token_expiry_buffer_ms": 120000,
   "usage_sync_max_retries": 3,
   "usage_tracking_enabled": true,
-  "enable_log_api_request": false
+  "enable_log_api_request": false,
+  "default_thinking_budget": 20000,
+  "thinking_budgets": {
+    "low": 8192,
+    "medium": 16384,
+    "high": 24576,
+    "max": 32768
+  }
 }
 ```
 
@@ -319,6 +326,11 @@ Edit `~/.config/opencode/kiro.json`:
 - `auth_server_port_range`: Legacy/ignored (no local auth server).
 - `usage_tracking_enabled`: Enable usage tracking and toast notifications.
 - `enable_log_api_request`: Enable detailed API request logging.
+- `default_thinking_budget`: Default thinking token budget for thinking models when no
+  variant is specified (default: `20000`).
+- `thinking_budgets`: Per-variant thinking budgets. Maps OpenCode's `reasoningEffort`
+  variants to token budgets. Defaults: `low: 8192`, `medium: 16384`, `high: 24576`,
+  `max: 32768`.
 
 ## Storage
 

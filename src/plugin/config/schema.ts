@@ -41,6 +41,15 @@ export const RegionSchema = z.enum([
 ])
 export type Region = z.infer<typeof RegionSchema>
 
+// Thinking budget configuration schema for named variants
+export const ThinkingBudgetConfigSchema = z.object({
+  low: z.number().min(1024).max(128000).default(8192),
+  medium: z.number().min(1024).max(128000).default(16384),
+  high: z.number().min(1024).max(128000).default(24576),
+  max: z.number().min(1024).max(128000).default(32768)
+})
+export type ThinkingBudgetConfig = z.infer<typeof ThinkingBudgetConfigSchema>
+
 export const KiroConfigSchema = z.object({
   $schema: z.string().optional(),
 
@@ -70,7 +79,20 @@ export const KiroConfigSchema = z.object({
 
   usage_tracking_enabled: z.boolean().default(true),
   auto_sync_kiro_cli: z.boolean().default(true),
-  enable_log_api_request: z.boolean().default(false)
+  enable_log_api_request: z.boolean().default(false),
+
+  // Thinking budget configuration
+  // Default budget used when no variant is specified or detected from providerOptions
+  default_thinking_budget: z.number().min(1024).max(128000).default(20000),
+
+  // Per-variant thinking budgets, mapped from providerOptions.reasoningEffort
+  // These match OpenCode's variant names (low, medium, high, max)
+  thinking_budgets: ThinkingBudgetConfigSchema.default({
+    low: 8192,
+    medium: 16384,
+    high: 24576,
+    max: 32768
+  })
 })
 
 export type KiroConfig = z.infer<typeof KiroConfigSchema>
@@ -88,5 +110,12 @@ export const DEFAULT_CONFIG: KiroConfig = {
   auth_server_port_range: 10,
   usage_tracking_enabled: true,
   auto_sync_kiro_cli: true,
-  enable_log_api_request: false
+  enable_log_api_request: false,
+  default_thinking_budget: 20000,
+  thinking_budgets: {
+    low: 8192,
+    medium: 16384,
+    high: 24576,
+    max: 32768
+  }
 }

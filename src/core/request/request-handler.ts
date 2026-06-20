@@ -80,7 +80,7 @@ export class RequestHandler {
     const body = init?.body ? JSON.parse(init.body) : {}
     const model = this.extractModel(url) || body.model || 'claude-sonnet-4-5'
     const think = model.endsWith('-thinking') || !!body.providerOptions?.thinkingConfig
-    const budget = body.providerOptions?.thinkingConfig?.thinkingBudget || 20000
+    const budget = this.resolveThinkingBudget(body)
 
     let retry = 0
     let consecutiveNullAccounts = 0
@@ -209,6 +209,34 @@ export class RequestHandler {
 
   private extractModel(url: string): string | null {
     return url.match(/models\/([^/:]+)/)?.[1] || null
+  }
+
+  /**
+   * Resolves the thinking budget from multiple sources in priority order:
+   * 1. Explicit thinkingConfig.thinkingBudget from providerOptions (if passed by OpenCode)
+   * 2. Mapped from reasoningEffort variant (low/medium/high/max) using config values
+   * 3. Default thinking budget from config
+   */
+  private resolveThinkingBudget(body: any): number {
+    // Priority 1: Explicit thinkingBudget from providerOptions
+    const explicitBudget = body.providerOptions?.thinkingConfig?.thinkingBudget
+    if (typeof explicitBudget === 'number' && explicitBudget > 0) {
+      return explicitBudget
+    }
+
+    // Priority 2: Map reasoningEffort variant to thinking budget
+    // OpenCode sends reasoningEffort for @ai-sdk/openai-compatible providers
+    const reasoningEffort = body.providerOptions?.reasoningEffort
+    if (reasoningEffort && this.config.thinking_budgets) {
+      const budgets = this.config.thinking_budgets
+      const effort = reasoningEffort.toLowerCase()
+      if (effort in budgets) {
+        return budgets[effort as keyof typeof budgets]
+      }
+    }
+
+    // Priority 3: Default from config
+    return this.config.default_thinking_budget ?? 20000
   }
 
   private prepareSdkRequest(
