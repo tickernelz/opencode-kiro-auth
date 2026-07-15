@@ -1,6 +1,7 @@
 import { CodeWhispererStreamingClient } from '@aws/codewhisperer-streaming-client'
 import { KIRO_CONSTANTS } from '../constants.js'
 import { getEffortSchemaPath } from './effort.js'
+import * as logger from './logger.js'
 import type { Effort, KiroAuthDetails } from './types'
 
 export type ResolvedSdkEndpointMode = 'kiro-runtime' | 'legacy-q'
@@ -13,6 +14,32 @@ interface ClientCacheEntry {
 
 const clientCache = new Map<string, ClientCacheEntry>()
 const KIRO_CLI_MAX_ATTEMPTS = 3
+const KIRO_TRANSIENT_ERROR_MESSAGE =
+  'Encountered an unexpected error when processing the request, please try again.'
+
+export function markRetryableKiroEventStreamError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+
+  const sdkError = error as {
+    $metadata?: { httpStatusCode?: number }
+    $response?: { statusCode?: number }
+    $retryable?: Record<string, unknown>
+    message?: string
+    name?: string
+    reason?: string
+  }
+  const status = sdkError.$metadata?.httpStatusCode ?? sdkError.$response?.statusCode
+  if (status !== 200) return false
+
+  const transient =
+    sdkError.name === 'InternalServerException' ||
+    sdkError.reason === 'MODEL_TEMPORARILY_UNAVAILABLE' ||
+    sdkError.message?.includes(KIRO_TRANSIENT_ERROR_MESSAGE)
+  if (!transient) return false
+
+  if (sdkError.$retryable === undefined) sdkError.$retryable = {}
+  return true
+}
 
 export function getSdkEndpoint(region: string, endpointMode: ResolvedSdkEndpointMode): string {
   if (region.startsWith('us-gov-')) return `https://q-fips.${region}.amazonaws.com`
@@ -46,6 +73,36 @@ export function createSdkClient(
   clientConfig.endpoint = getSdkEndpoint(region, endpointMode)
 
   const client = new CodeWhispererStreamingClient(clientConfig)
+
+  // Kiro can send a transient exception as the first frame of an HTTP 200 event stream.
+  // Smithy otherwise classifies that startup failure as a non-retryable client error.
+  client.middlewareStack.addRelativeTo(
+    (next: any) => async (args: any) => {
+      try {
+        return await next(args)
+      } catch (error) {
+        if (markRetryableKiroEventStreamError(error)) {
+          const sdkError = error as {
+            $metadata?: { httpStatusCode?: number }
+            $response?: { statusCode?: number }
+            name?: string
+            reason?: string
+          }
+          logger.warn('Retrying transient Kiro event-stream startup failure', {
+            status: sdkError.$metadata?.httpStatusCode ?? sdkError.$response?.statusCode,
+            name: sdkError.name,
+            reason: sdkError.reason
+          })
+        }
+        throw error
+      }
+    },
+    {
+      relation: 'before',
+      toMiddleware: 'deserializerMiddleware',
+      name: 'classifyKiroEventStreamError'
+    }
+  )
 
   client.middlewareStack.add(
     (next: any) => async (args: any) => {

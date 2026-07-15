@@ -1,6 +1,11 @@
 import { GenerateAssistantResponseCommand } from '@aws/codewhisperer-streaming-client'
 import { describe, expect, test } from 'bun:test'
-import { clearSdkClientCache, createSdkClient, getSdkEndpoint } from '../plugin/sdk-client'
+import {
+  clearSdkClientCache,
+  createSdkClient,
+  getSdkEndpoint,
+  markRetryableKiroEventStreamError
+} from '../plugin/sdk-client'
 import type { KiroAuthDetails } from '../plugin/types'
 
 function auth(): KiroAuthDetails {
@@ -76,6 +81,105 @@ describe('SDK client', () => {
     expect(typeof retryMode === 'function' ? await retryMode() : retryMode).toBe('standard')
 
     clearSdkClientCache()
+  })
+
+  test('marks transient HTTP 200 event-stream startup failures as retryable', () => {
+    const error = {
+      message: 'Encountered an unexpected error when processing the request, please try again.',
+      $metadata: { httpStatusCode: 200 }
+    }
+
+    expect(markRetryableKiroEventStreamError(error)).toBe(true)
+    expect(error).toHaveProperty('$retryable', {})
+  })
+
+  test('classifies a hidden response without reading its body', () => {
+    const response = {
+      statusCode: 200,
+      get body(): never {
+        throw new Error('response body must not be read')
+      }
+    }
+    const error = Object.defineProperty(
+      { reason: 'MODEL_TEMPORARILY_UNAVAILABLE' } as Record<string, unknown>,
+      '$response',
+      { value: response, enumerable: false }
+    )
+
+    expect(markRetryableKiroEventStreamError(error)).toBe(true)
+    expect(error).toHaveProperty('$retryable', {})
+  })
+
+  test('retries a classified startup failure through the SDK middleware stack', async () => {
+    clearSdkClientCache()
+
+    const client = createSdkClient(auth(), 'us-east-1')
+    let attempts = 0
+    client.middlewareStack.addRelativeTo(
+      () => async () => {
+        attempts++
+        if (attempts === 1) {
+          throw Object.assign(
+            new Error(
+              'Encountered an unexpected error when processing the request, please try again.'
+            ),
+            { $metadata: { httpStatusCode: 200 } }
+          )
+        }
+        return {
+          response: { statusCode: 200, headers: {} },
+          output: { $metadata: {} }
+        }
+      },
+      {
+        relation: 'after',
+        toMiddleware: 'classifyKiroEventStreamError',
+        name: 'simulateKiroEventStreamStartup'
+      }
+    )
+
+    const command = new GenerateAssistantResponseCommand({
+      conversationState: {
+        chatTriggerType: 'MANUAL',
+        conversationId: 'test-conversation',
+        currentMessage: {
+          userInputMessage: {
+            content: 'hello',
+            modelId: 'gpt-5.6-sol',
+            origin: 'AI_EDITOR'
+          }
+        }
+      }
+    })
+
+    try {
+      const result = await client.send(command)
+      expect(attempts).toBe(2)
+      expect(result.$metadata.attempts).toBe(2)
+    } finally {
+      clearSdkClientCache()
+    }
+  })
+
+  test('does not retry unrelated stream or request errors', () => {
+    expect(
+      markRetryableKiroEventStreamError({
+        message: 'event stream ended unexpectedly',
+        $metadata: { httpStatusCode: 200 }
+      })
+    ).toBe(false)
+    expect(
+      markRetryableKiroEventStreamError({
+        message: 'Invalid request body',
+        $metadata: { httpStatusCode: 400 }
+      })
+    ).toBe(false)
+    expect(
+      markRetryableKiroEventStreamError({
+        name: 'InternalServerException',
+        $metadata: { httpStatusCode: 403 }
+      })
+    ).toBe(false)
   })
 
   test('injects output-config effort before content-length is computed', async () => {
