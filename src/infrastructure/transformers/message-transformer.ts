@@ -1,5 +1,9 @@
 import type { CodeWhispererMessage } from '../../plugin/types'
 
+// Kiro requires synthetic turns in a few alternation gaps. Keep them nonempty but invisible
+// because visible filler can be learned and echoed as an assistant response.
+export const SYNTHETIC_TURN_CONTENT = '\u2063'
+
 export function sanitizeHistory(history: CodeWhispererMessage[]): CodeWhispererMessage[] {
   const result: CodeWhispererMessage[] = []
   for (let i = 0; i < history.length; i++) {

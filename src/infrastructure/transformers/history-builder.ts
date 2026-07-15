@@ -5,7 +5,7 @@ import {
   extractTextFromParts
 } from '../../plugin/image-handler.js'
 import type { CodeWhispererMessage } from '../../plugin/types'
-import { getContentText } from './message-transformer.js'
+import { SYNTHETIC_TURN_CONTENT, getContentText } from './message-transformer.js'
 import { deduplicateToolResults } from './tool-transformer.js'
 
 /**
@@ -56,7 +56,7 @@ export function collapseAgenticLoops(history: CodeWhispererMessage[]): CodeWhisp
           } else {
             result.push({
               assistantResponseMessage: {
-                content: '[system: tool calling continues]',
+                content: SYNTHETIC_TURN_CONTENT,
                 toolUses: asst!.assistantResponseMessage!.toolUses
               }
             })
@@ -116,7 +116,7 @@ export function buildHistory(msgs: any[], resolved: string): CodeWhispererMessag
       if (trs.length) uim.userInputMessageContext = { toolResults: deduplicateToolResults(trs) }
       const prev = history[history.length - 1]
       if (prev && prev.userInputMessage)
-        history.push({ assistantResponseMessage: { content: '[system: conversation continues]' } })
+        history.push({ assistantResponseMessage: { content: SYNTHETIC_TURN_CONTENT } })
       history.push({ userInputMessage: uim })
     } else if (m.role === 'tool') {
       const trs: any[] = []
@@ -136,7 +136,7 @@ export function buildHistory(msgs: any[], resolved: string): CodeWhispererMessag
       }
       const prev = history[history.length - 1]
       if (prev && prev.userInputMessage)
-        history.push({ assistantResponseMessage: { content: '[system: conversation continues]' } })
+        history.push({ assistantResponseMessage: { content: SYNTHETIC_TURN_CONTENT } })
       history.push({
         userInputMessage: {
           content: 'Tool results provided.',
