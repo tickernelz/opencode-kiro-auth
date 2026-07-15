@@ -1,4 +1,5 @@
-export { KiroOAuthPlugin, createKiroPlugin } from './src/plugin';
-export { authorizeKiroIDC } from './src/kiro/oauth-idc';
-export type { KiroAuthDetails, KiroAuthMethod, KiroRegion, ManagedAccount } from './src/plugin/types';
-export type { KiroConfig } from './src/plugin/config';
+// Repo-root entrypoint kept in sync with the published API in src/index.ts.
+// The npm package ships dist/index.js (built from src/index.ts); this file is a
+// convenience re-export for source consumers and must not diverge.
+export * from './src/index'
+export { default } from './src/index'

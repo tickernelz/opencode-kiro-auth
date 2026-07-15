@@ -5,22 +5,27 @@ import type { Effort } from './config/schema'
  */
 export const EFFORT_LEVELS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 
+export type EffortSchemaPath = 'output_config' | 'reasoning'
+
+const REASONING_EFFORT_MODELS = new Set(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])
+
 /**
  * Models that support the 5-value effort enum (including xhigh).
- * These models support up to 128k thinking tokens with max effort.
  */
-const XHIGH_CAPABLE_MODELS = new Set(['claude-opus-4.7', 'claude-opus-4.8'])
+const XHIGH_CAPABLE_MODELS = new Set([
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna',
+  'claude-opus-4.7',
+  'claude-opus-4.8'
+])
 
 /**
  * Models that support the 4-value effort enum (no xhigh).
- * xhigh requests on these models are clamped to max.
  */
 const EFFORT_CAPABLE_MODELS = new Set([
-  'claude-opus-4.5',
   'claude-opus-4.6',
   'claude-opus-4.6-1m',
-  'claude-sonnet-4.5',
-  'claude-sonnet-4.5-1m',
   'claude-sonnet-4.6',
   'claude-sonnet-4.6-1m',
   ...XHIGH_CAPABLE_MODELS
@@ -40,19 +45,23 @@ export function supportsXHighEffort(kiroModel: string): boolean {
   return XHIGH_CAPABLE_MODELS.has(kiroModel)
 }
 
+export function getEffortSchemaPath(kiroModel: string): EffortSchemaPath | undefined {
+  if (!supportsEffort(kiroModel)) return undefined
+  return REASONING_EFFORT_MODELS.has(kiroModel) ? 'reasoning' : 'output_config'
+}
+
 /**
  * Resolve effort level for a given model.
  * - Returns undefined if model doesn't support effort
- * - Clamps xhigh to max for models that don't support it
+ * - Returns undefined when the requested level is unsupported by the model
  */
 export function resolveEffort(kiroModel: string, requested: Effort): Effort | undefined {
   if (!supportsEffort(kiroModel)) {
     return undefined
   }
 
-  // xhigh is only supported on opus-4.7 and opus-4.8
   if (requested === 'xhigh' && !supportsXHighEffort(kiroModel)) {
-    return 'max'
+    return undefined
   }
 
   return requested
@@ -107,13 +116,19 @@ export function getEffectiveEffort(
   thinking: boolean,
   budget: number,
   configEffort?: Effort,
-  autoEffortMapping = true
+  autoEffortMapping = false,
+  requestEffort?: Effort
 ): Effort | undefined {
   if (!supportsEffort(kiroModel)) {
     return undefined
   }
 
-  // Explicit config takes precedence - always applied even without thinking
+  // A selected OpenCode model variant is specific to this request.
+  if (requestEffort) {
+    return resolveEffort(kiroModel, requestEffort)
+  }
+
+  // Explicit config applies even without thinking.
   if (configEffort) {
     return resolveEffort(kiroModel, configEffort)
   }

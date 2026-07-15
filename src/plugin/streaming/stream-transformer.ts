@@ -2,27 +2,18 @@ import { parseBracketToolCalls } from '../../infrastructure/transformers/tool-ca
 import { getContextWindowSize } from '../models.js'
 import { estimateTokens } from '../response.js'
 import { convertToOpenAI } from './openai-converter.js'
-import { findRealTag, parseStreamBuffer } from './stream-parser.js'
-import { createTextDeltaEvents, createThinkingDeltaEvents, stopBlock } from './stream-state.js'
-import { StreamState, THINKING_END_TAG, THINKING_START_TAG, ToolCallState } from './types.js'
+import { parseStreamBuffer } from './stream-parser.js'
+import { createStreamState, stopBlock } from './stream-state.js'
+import { createContentDeltaEvents, flushContentDeltaEvents } from './thinking-parser.js'
+import { ToolCallState } from './types.js'
 
 export async function* transformKiroStream(
   response: Response,
   model: string,
-  conversationId: string
+  conversationId: string,
+  thinkingRequested = model.endsWith('-thinking')
 ): AsyncGenerator<any> {
-  const thinkingRequested = true
-
-  const streamState: StreamState = {
-    thinkingRequested,
-    buffer: '',
-    inThinking: false,
-    thinkingExtracted: false,
-    thinkingBlockIndex: null,
-    textBlockIndex: null,
-    nextBlockIndex: 0,
-    stoppedBlocks: new Set()
-  }
+  const streamState = createStreamState(thinkingRequested)
 
   if (!response.body) {
     throw new Error('Response body is null')
@@ -58,91 +49,9 @@ export async function* transformKiroStream(
           totalContent += event.data
           textOnlyContent += event.data
 
-          if (!thinkingRequested) {
-            for (const ev of createTextDeltaEvents(event.data, streamState)) {
-              {
-                const _c = convertToOpenAI(ev, conversationId, model)
-                if (_c !== null) yield _c
-              }
-            }
-            continue
-          }
-
-          streamState.buffer += event.data
-          const deltaEvents: any[] = []
-
-          while (streamState.buffer.length > 0) {
-            if (!streamState.inThinking && !streamState.thinkingExtracted) {
-              const startPos = findRealTag(streamState.buffer, THINKING_START_TAG)
-              if (startPos !== -1) {
-                const before = streamState.buffer.slice(0, startPos)
-                if (before) {
-                  deltaEvents.push(...createTextDeltaEvents(before, streamState))
-                }
-
-                streamState.buffer = streamState.buffer.slice(startPos + THINKING_START_TAG.length)
-                streamState.inThinking = true
-                continue
-              }
-
-              const safeLen = Math.max(0, streamState.buffer.length - THINKING_START_TAG.length)
-              if (safeLen > 0) {
-                const safeText = streamState.buffer.slice(0, safeLen)
-                if (safeText) {
-                  deltaEvents.push(...createTextDeltaEvents(safeText, streamState))
-                }
-                streamState.buffer = streamState.buffer.slice(safeLen)
-              }
-              break
-            }
-
-            if (streamState.inThinking) {
-              const endPos = findRealTag(streamState.buffer, THINKING_END_TAG)
-              if (endPos !== -1) {
-                const thinkingPart = streamState.buffer.slice(0, endPos)
-                if (thinkingPart) {
-                  deltaEvents.push(...createThinkingDeltaEvents(thinkingPart, streamState))
-                }
-
-                streamState.buffer = streamState.buffer.slice(endPos + THINKING_END_TAG.length)
-                streamState.inThinking = false
-                streamState.thinkingExtracted = true
-
-                deltaEvents.push(...createThinkingDeltaEvents('', streamState))
-                deltaEvents.push(...stopBlock(streamState.thinkingBlockIndex, streamState))
-
-                if (streamState.buffer.startsWith('\n\n')) {
-                  streamState.buffer = streamState.buffer.slice(2)
-                }
-                continue
-              }
-
-              const safeLen = Math.max(0, streamState.buffer.length - THINKING_END_TAG.length)
-              if (safeLen > 0) {
-                const safeThinking = streamState.buffer.slice(0, safeLen)
-                if (safeThinking) {
-                  deltaEvents.push(...createThinkingDeltaEvents(safeThinking, streamState))
-                }
-                streamState.buffer = streamState.buffer.slice(safeLen)
-              }
-              break
-            }
-
-            if (streamState.thinkingExtracted) {
-              const rest = streamState.buffer
-              streamState.buffer = ''
-              if (rest) {
-                deltaEvents.push(...createTextDeltaEvents(rest, streamState))
-              }
-              break
-            }
-          }
-
-          for (const ev of deltaEvents) {
-            {
-              const _c = convertToOpenAI(ev, conversationId, model)
-              if (_c !== null) yield _c
-            }
+          for (const ev of createContentDeltaEvents(event.data, streamState)) {
+            const converted = convertToOpenAI(ev, conversationId, model)
+            if (converted !== null) yield converted
           }
         } else if (event.type === 'toolUse') {
           const tc = event.data
@@ -193,28 +102,9 @@ export async function* transformKiroStream(
       currentToolCall = null
     }
 
-    if (thinkingRequested && streamState.buffer) {
-      if (streamState.inThinking) {
-        for (const ev of createThinkingDeltaEvents(streamState.buffer, streamState)) {
-          const _c = convertToOpenAI(ev, conversationId, model)
-          if (_c !== null) yield _c
-        }
-        streamState.buffer = ''
-        for (const ev of createThinkingDeltaEvents('', streamState)) {
-          const _c = convertToOpenAI(ev, conversationId, model)
-          if (_c !== null) yield _c
-        }
-        for (const ev of stopBlock(streamState.thinkingBlockIndex, streamState)) {
-          const _c = convertToOpenAI(ev, conversationId, model)
-          if (_c !== null) yield _c
-        }
-      } else {
-        for (const ev of createTextDeltaEvents(streamState.buffer, streamState)) {
-          const _c = convertToOpenAI(ev, conversationId, model)
-          if (_c !== null) yield _c
-        }
-        streamState.buffer = ''
-      }
+    for (const ev of flushContentDeltaEvents(streamState)) {
+      const converted = convertToOpenAI(ev, conversationId, model)
+      if (converted !== null) yield converted
     }
 
     for (const ev of stopBlock(streamState.textBlockIndex, streamState)) {

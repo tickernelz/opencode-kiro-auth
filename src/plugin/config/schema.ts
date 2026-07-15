@@ -3,61 +3,39 @@ import { z } from 'zod'
 export const AccountSelectionStrategySchema = z.enum(['sticky', 'round-robin', 'lowest-usage'])
 export type AccountSelectionStrategy = z.infer<typeof AccountSelectionStrategySchema>
 
-/**
- * Kiro effort levels control thinking/reasoning depth.
- * - low: minimal reasoning
- * - medium: balanced (default when thinking enabled)
- * - high: deeper reasoning
- * - xhigh: extended reasoning (opus-4.7, opus-4.8 only)
- * - max: maximum reasoning depth (128k thinking tokens on opus-4.7/4.8)
- */
+export const SdkEndpointModeSchema = z.enum(['auto', 'kiro-runtime', 'legacy-q'])
+export type SdkEndpointMode = z.infer<typeof SdkEndpointModeSchema>
+
 export const EffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
 export type Effort = z.infer<typeof EffortSchema>
 
-export const RegionSchema = z.enum([
-  'us-east-1',
-  'us-east-2',
-  'us-west-1',
-  'us-west-2',
-  'af-south-1',
-  'ap-east-1',
-  'ap-south-2',
-  'ap-southeast-3',
-  'ap-southeast-5',
-  'ap-southeast-4',
-  'ap-south-1',
-  'ap-southeast-6',
-  'ap-northeast-3',
-  'ap-northeast-2',
-  'ap-southeast-1',
-  'ap-southeast-2',
-  'ap-east-2',
-  'ap-southeast-7',
-  'ap-northeast-1',
-  'ca-central-1',
-  'ca-west-1',
-  'eu-central-1',
-  'eu-west-1',
-  'eu-west-2',
-  'eu-south-1',
-  'eu-west-3',
-  'eu-south-2',
-  'eu-north-1',
-  'eu-central-2',
-  'il-central-1',
-  'mx-central-1',
-  'me-south-1',
-  'me-central-1',
-  'sa-east-1'
-])
+const RegionStringSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^(us|us-gov|af|ap|ca|cn|eu|il|me|mx|sa)-[a-z0-9-]+-\d+$/,
+    'Please enter a valid AWS region'
+  )
+
+export const RegionSchema = RegionStringSchema
 export type Region = z.infer<typeof RegionSchema>
+
+const OptionalTrimmedUrlSchema = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined),
+  z.string().url().optional()
+)
+
+const OptionalTrimmedStringSchema = z.preprocess(
+  (value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined),
+  z.string().optional()
+)
 
 export const KiroConfigSchema = z.object({
   $schema: z.string().optional(),
 
-  idc_start_url: z.string().url().optional(),
+  idc_start_url: OptionalTrimmedUrlSchema,
   idc_region: RegionSchema.optional(),
-  idc_profile_arn: z.string().optional(),
+  idc_profile_arn: OptionalTrimmedStringSchema,
 
   account_selection_strategy: AccountSelectionStrategySchema.default('lowest-usage'),
 
@@ -81,21 +59,10 @@ export const KiroConfigSchema = z.object({
 
   usage_tracking_enabled: z.boolean().default(true),
   auto_sync_kiro_cli: z.boolean().default(true),
+  sdk_endpoint_mode: SdkEndpointModeSchema.default('auto'),
   enable_log_api_request: z.boolean().default(false),
-
-  /**
-   * Default effort level for thinking models. Controls reasoning depth.
-   * When set, this overrides the automatic budget-based mapping.
-   * Values: 'low', 'medium', 'high', 'xhigh' (opus-4.7/4.8 only), 'max'
-   */
   effort: EffortSchema.optional(),
-
-  /**
-   * Enable automatic effort mapping from OpenCode's thinking budget.
-   * When true (default), maps budget ranges to effort levels.
-   * When false, only uses explicit effort config or falls back to 'medium'.
-   */
-  auto_effort_mapping: z.boolean().default(true)
+  auto_effort_mapping: z.boolean().default(false)
 })
 
 export type KiroConfig = z.infer<typeof KiroConfigSchema>
@@ -113,6 +80,7 @@ export const DEFAULT_CONFIG: KiroConfig = {
   auth_server_port_range: 10,
   usage_tracking_enabled: true,
   auto_sync_kiro_cli: true,
+  sdk_endpoint_mode: 'auto',
   enable_log_api_request: false,
-  auto_effort_mapping: true
+  auto_effort_mapping: false
 }

@@ -1,4 +1,22 @@
+import { createThinkingLexState } from './thinking-lexer.js'
 import { StreamEvent, StreamState } from './types.js'
+
+export function createStreamState(thinkingRequested: boolean): StreamState {
+  return {
+    thinkingRequested,
+    buffer: '',
+    pendingTextBeforeThinking: '',
+    inThinking: false,
+    thinkingExtracted: false,
+    thinkingBlockIndex: null,
+    textBlockIndex: null,
+    nextBlockIndex: 0,
+    stoppedBlocks: new Set(),
+    stripThinkingLeadingNewline: false,
+    stripTextLeadingNewlinesAfterThinking: false,
+    thinkingLex: createThinkingLexState()
+  }
+}
 
 export function ensureBlockStart(
   blockType: 'thinking' | 'text',

@@ -15,27 +15,34 @@ interface TokenRefresherConfig {
 }
 
 export class TokenRefresher {
+  private refreshInFlight = new Map<string, Promise<KiroAuthDetails>>()
+
   constructor(
     private config: TokenRefresherConfig,
     private accountManager: AccountManager,
     private syncFromKiroCli: () => Promise<void>,
-    private repository: AccountRepository
+    private repository: AccountRepository,
+    private refresh: (auth: KiroAuthDetails) => Promise<KiroAuthDetails> = refreshAccessToken
   ) {}
 
   async refreshIfNeeded(
     account: ManagedAccount,
     auth: KiroAuthDetails,
     showToast: ToastFunction
-  ): Promise<{ account: ManagedAccount; shouldContinue: boolean }> {
+  ): Promise<{ account: ManagedAccount; auth: KiroAuthDetails; shouldContinue: boolean }> {
     if (!accessTokenExpired(auth, this.config.token_expiry_buffer_ms)) {
-      return { account, shouldContinue: false }
+      return { account, auth, shouldContinue: false }
     }
 
     try {
-      const newAuth = await refreshAccessToken(auth)
-      this.accountManager.updateFromAuth(account, newAuth)
-      await this.repository.batchSave(this.accountManager.getAccounts())
-      return { account, shouldContinue: false }
+      let refresh = this.refreshInFlight.get(account.id)
+      if (!refresh) {
+        refresh = this.refreshAccount(account, auth)
+        this.refreshInFlight.set(account.id, refresh)
+        refresh.finally(() => this.refreshInFlight.delete(account.id)).catch(() => {})
+      }
+      const newAuth = await refresh
+      return { account, auth: newAuth, shouldContinue: false }
     } catch (e: any) {
       return await this.handleRefreshError(e, account, showToast)
     }
@@ -45,7 +52,7 @@ export class TokenRefresher {
     error: any,
     account: ManagedAccount,
     showToast: ToastFunction
-  ): Promise<{ account: ManagedAccount; shouldContinue: boolean }> {
+  ): Promise<{ account: ManagedAccount; auth: KiroAuthDetails; shouldContinue: boolean }> {
     logger.error('Token refresh failed', {
       email: account.email,
       code: error instanceof KiroTokenRefreshError ? error.code : undefined,
@@ -57,17 +64,42 @@ export class TokenRefresher {
 
     this.repository.invalidateCache()
     const accounts = await this.repository.findAll()
-    const stillAcc = accounts.find((a: ManagedAccount) => a.id === account.id)
-
-    if (
-      stillAcc &&
+    const hasUsableCredentials = (candidate: ManagedAccount) =>
       !accessTokenExpired(
-        this.accountManager.toAuthDetails(stillAcc),
+        this.accountManager.toAuthDetails(candidate),
         this.config.token_expiry_buffer_ms
       )
-    ) {
+    let stillAcc = accounts.find(
+      (candidate: ManagedAccount) => candidate.id === account.id && hasUsableCredentials(candidate)
+    )
+    if (!stillAcc && account.profileArn) {
+      stillAcc = accounts.find(
+        (candidate: ManagedAccount) =>
+          candidate.authMethod === account.authMethod &&
+          candidate.profileArn === account.profileArn &&
+          hasUsableCredentials(candidate)
+      )
+    }
+    if (!stillAcc && !account.profileArn && account.clientId) {
+      stillAcc = accounts.find(
+        (candidate: ManagedAccount) =>
+          candidate.authMethod === account.authMethod &&
+          !candidate.profileArn &&
+          candidate.clientId === account.clientId &&
+          hasUsableCredentials(candidate)
+      )
+    }
+
+    if (stillAcc) {
+      if (stillAcc.id !== account.id) this.accountManager.removeAccount(account)
+      this.accountManager.addAccount(stillAcc)
+      const recoveredAuth = this.accountManager.toAuthDetails(stillAcc)
       showToast('Credentials recovered from Kiro CLI sync.', 'info')
-      return { account: stillAcc, shouldContinue: true }
+      return {
+        account: stillAcc,
+        auth: recoveredAuth,
+        shouldContinue: false
+      }
     }
 
     if (
@@ -83,7 +115,7 @@ export class TokenRefresher {
     ) {
       this.accountManager.markUnhealthy(account, error.message)
       await this.repository.batchSave(this.accountManager.getAccounts())
-      return { account, shouldContinue: true }
+      return { account, auth: this.accountManager.toAuthDetails(account), shouldContinue: true }
     }
 
     logger.error('Token refresh unrecoverable', {
@@ -92,5 +124,15 @@ export class TokenRefresher {
       message: error instanceof Error ? error.message : String(error)
     })
     throw error
+  }
+
+  private async refreshAccount(
+    account: ManagedAccount,
+    auth: KiroAuthDetails
+  ): Promise<KiroAuthDetails> {
+    const newAuth = await this.refresh(auth)
+    this.accountManager.updateFromAuth(account, newAuth)
+    await this.repository.batchSave(this.accountManager.getAccounts())
+    return newAuth
   }
 }

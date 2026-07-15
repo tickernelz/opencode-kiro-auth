@@ -54,6 +54,16 @@ describe('bootstrapAuthIfNeeded', () => {
     rmSync(home, { recursive: true, force: true })
   })
 
+  test('does not rewrite non-object auth.json', () => {
+    const { home, authPath } = setupBootstrapFixture()
+    writeFileSync(authPath, 'null')
+
+    bootstrapAuthIfNeeded('kiro')
+
+    expect(readFileSync(authPath, 'utf-8')).toBe('null')
+    rmSync(home, { recursive: true, force: true })
+  })
+
   test('adds placeholder while preserving existing auth providers', () => {
     const { home, authPath } = setupBootstrapFixture()
     writeFileSync(authPath, JSON.stringify({ github: { type: 'api', key: 'existing' } }, null, 2))
@@ -71,6 +81,18 @@ describe('bootstrapAuthIfNeeded', () => {
     const { home, authPath } = setupBootstrapFixture()
     writeFileSync(authPath, JSON.stringify({ github: { type: 'api', key: 'existing' } }, null, 2))
     chmodSync(authPath, 0o600)
+
+    bootstrapAuthIfNeeded('kiro')
+
+    expect(statSync(authPath).mode & 0o777).toBe(0o600)
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  test('repairs permissive auth.json permissions when rewriting', () => {
+    if (process.platform === 'win32') return
+    const { home, authPath } = setupBootstrapFixture()
+    writeFileSync(authPath, JSON.stringify({ github: { type: 'api', key: 'existing' } }, null, 2))
+    chmodSync(authPath, 0o644)
 
     bootstrapAuthIfNeeded('kiro')
 

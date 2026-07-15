@@ -7,6 +7,7 @@ import {
   DEFAULT_CONFIG,
   KiroConfigSchema,
   RegionSchema,
+  SdkEndpointModeSchema,
   type KiroConfig
 } from './schema'
 
@@ -102,7 +103,7 @@ function parseNumberEnv(value: string | undefined, fallback: number): number {
 function applyEnvOverrides(config: KiroConfig): KiroConfig {
   const env = process.env
 
-  return {
+  const overridden = {
     ...config,
 
     account_selection_strategy: env.KIRO_ACCOUNT_SELECTION_STRATEGY
@@ -114,6 +115,18 @@ function applyEnvOverrides(config: KiroConfig): KiroConfig {
     default_region: env.KIRO_DEFAULT_REGION
       ? RegionSchema.catch('us-east-1').parse(env.KIRO_DEFAULT_REGION)
       : config.default_region,
+
+    idc_start_url: env.KIRO_IDC_START_URL
+      ? String(env.KIRO_IDC_START_URL).trim()
+      : config.idc_start_url,
+
+    idc_region: env.KIRO_IDC_REGION
+      ? RegionSchema.catch(config.idc_region || config.default_region).parse(env.KIRO_IDC_REGION)
+      : config.idc_region,
+
+    idc_profile_arn: env.KIRO_IDC_PROFILE_ARN
+      ? String(env.KIRO_IDC_PROFILE_ARN).trim()
+      : config.idc_profile_arn,
 
     rate_limit_retry_delay_ms: parseNumberEnv(
       env.KIRO_RATE_LIMIT_RETRY_DELAY_MS,
@@ -157,11 +170,26 @@ function applyEnvOverrides(config: KiroConfig): KiroConfig {
       config.usage_tracking_enabled
     ),
 
+    auto_sync_kiro_cli: parseBooleanEnv(env.KIRO_AUTO_SYNC_KIRO_CLI, config.auto_sync_kiro_cli),
+
+    sdk_endpoint_mode: env.KIRO_SDK_ENDPOINT_MODE
+      ? SdkEndpointModeSchema.catch('auto').parse(env.KIRO_SDK_ENDPOINT_MODE)
+      : config.sdk_endpoint_mode,
+
     enable_log_api_request: parseBooleanEnv(
       env.KIRO_ENABLE_LOG_API_REQUEST,
       config.enable_log_api_request
-    )
+    ),
+
+    auto_effort_mapping: parseBooleanEnv(env.KIRO_AUTO_EFFORT_MAPPING, config.auto_effort_mapping)
   }
+
+  const result = KiroConfigSchema.safeParse(overridden)
+  if (result.success) return result.data
+
+  const issues = result.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ')
+  logger.warn(`Environment config validation error: ${issues}`)
+  return config
 }
 
 export function loadConfig(directory: string): KiroConfig {

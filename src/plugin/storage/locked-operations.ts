@@ -15,6 +15,8 @@ const LOCK_OPTIONS = {
   realpath: false
 }
 
+const lockWaitBuffer = new Int32Array(new SharedArrayBuffer(4))
+
 export async function withDatabaseLock<T>(dbPath: string, fn: () => Promise<T>): Promise<T> {
   const lockPath = `${dbPath}.lock`
 
@@ -36,6 +38,31 @@ export async function withDatabaseLock<T>(dbPath: string, fn: () => Promise<T>):
         console.warn('Failed to release lock:', e)
       }
     }
+  }
+}
+
+export function withDatabaseLockSync<T>(dbPath: string, fn: () => T): T {
+  const deadline = Date.now() + 10000
+  let release: (() => void) | undefined
+
+  while (!release) {
+    try {
+      release = lockfile.lockSync(dbPath, { stale: LOCK_OPTIONS.stale, realpath: false })
+    } catch (error) {
+      if (
+        !(error && typeof error === 'object' && 'code' in error && error.code === 'ELOCKED') ||
+        Date.now() >= deadline
+      ) {
+        throw error
+      }
+      Atomics.wait(lockWaitBuffer, 0, 0, 25)
+    }
+  }
+
+  try {
+    return fn()
+  } finally {
+    release()
   }
 }
 
@@ -67,13 +94,40 @@ export function mergeAccounts(
       const hasPermanentError =
         isPermanentError(existingAcc.unhealthyReason) || incomingHasPermanentError
       const incomingRecovered = acc.isHealthy && !incomingHasPermanentError
+      const incomingSync = acc.lastSync || 0
+      const existingSync = existingAcc.lastSync || 0
+      const incomingHasQuota = (acc.limitCount || 0) > 0
+      const existingHasQuota = (existingAcc.limitCount || 0) > 0
+      // Only adopt the incoming quota snapshot when it is strictly newer AND it
+      // is not an empty (0/0) snapshot replacing real existing quota. A failed
+      // remote usage fetch produces a newer timestamp with zeroed counts, which
+      // must never clobber good quota data.
+      const useIncomingQuota =
+        incomingSync > 0 && incomingSync > existingSync && (incomingHasQuota || !existingHasQuota)
+      const incomingExpires = acc.expiresAt || 0
+      const existingExpires = existingAcc.expiresAt || 0
+      const preserveExistingAccess =
+        existingAcc.isHealthy && existingExpires > Date.now() && existingExpires >= incomingExpires
+      const incomingCredentialTime = acc.refreshTokenUpdatedAt || 0
+      const existingCredentialTime = existingAcc.refreshTokenUpdatedAt || 0
+      const useIncomingRefresh =
+        !existingAcc.refreshToken ||
+        (acc.refreshToken !== existingAcc.refreshToken &&
+          incomingCredentialTime > existingCredentialTime)
 
       accountMap.set(acc.id, {
         ...existingAcc,
         ...acc,
+        refreshToken: useIncomingRefresh ? acc.refreshToken : existingAcc.refreshToken,
+        refreshTokenUpdatedAt: Math.max(existingCredentialTime, incomingCredentialTime),
+        accessToken: preserveExistingAccess ? existingAcc.accessToken : acc.accessToken,
+        expiresAt: preserveExistingAccess ? existingAcc.expiresAt : acc.expiresAt,
         lastUsed: Math.max(existingAcc.lastUsed || 0, acc.lastUsed || 0),
-        usedCount: Math.max(existingAcc.usedCount || 0, acc.usedCount || 0),
-        limitCount: Math.max(existingAcc.limitCount || 0, acc.limitCount || 0),
+        usedCount: useIncomingQuota ? acc.usedCount : existingAcc.usedCount,
+        limitCount: useIncomingQuota ? acc.limitCount : existingAcc.limitCount,
+        subscriptionPlan: useIncomingQuota
+          ? acc.subscriptionPlan || existingAcc.subscriptionPlan
+          : existingAcc.subscriptionPlan || acc.subscriptionPlan,
         rateLimitResetTime: Math.max(
           existingAcc.rateLimitResetTime || 0,
           acc.rateLimitResetTime || 0

@@ -40,6 +40,7 @@ interface TransformResult {
 interface EffortConfig {
   effort?: Effort
   autoEffortMapping?: boolean
+  requestEffort?: Effort
 }
 
 type ToastFunction = (message: string, variant: 'info' | 'warning' | 'success' | 'error') => void
@@ -342,7 +343,8 @@ export function transformToSdkRequest(
     think,
     budget,
     effortConfig?.effort,
-    effortConfig?.autoEffortMapping ?? true
+    effortConfig?.autoEffortMapping ?? false,
+    effortConfig?.requestEffort
   )
 
   return {

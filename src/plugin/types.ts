@@ -37,6 +37,7 @@ export interface ManagedAccount {
   profileArn?: string
   startUrl?: string
   refreshToken: string
+  refreshTokenUpdatedAt?: number
   accessToken: string
   expiresAt: number
   rateLimitResetTime: number
@@ -46,6 +47,7 @@ export interface ManagedAccount {
   failCount: number
   usedCount?: number
   limitCount?: number
+  subscriptionPlan?: string
   lastSync?: number
   lastUsed?: number
 }

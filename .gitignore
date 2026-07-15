@@ -5,3 +5,4 @@ dist/
 *.tsbuildinfo
 .vscode/*
 .sisyphus
+.opencode/

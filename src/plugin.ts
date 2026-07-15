@@ -1,4 +1,9 @@
-import { KIRO_CONSTANTS } from './constants.js'
+import {
+  DEFAULT_PROVIDER_MODELS,
+  KIRO_CONSTANTS,
+  KIRO_LEGACY_PROVIDER_ID,
+  KIRO_PROVIDER_ID
+} from './constants.js'
 import { AuthHandler } from './core/auth/auth-handler.js'
 import { RequestHandler } from './core/request/request-handler.js'
 import { AccountCache } from './infrastructure/database/account-cache.js'
@@ -6,10 +11,27 @@ import { AccountRepository } from './infrastructure/database/account-repository.
 import { AccountManager } from './plugin/accounts.js'
 import { bootstrapAuthIfNeeded } from './plugin/auth-bootstrap.js'
 import { loadConfig } from './plugin/config/index.js'
+import { ensureOpenCodeAuthPlaceholder } from './plugin/opencode-auth.js'
 
 type ToastFunction = (message: string, variant: string) => void
 
-const KIRO_PROVIDER_ID = 'kiro'
+function mergeProviderModels(existing: Record<string, any> | undefined): Record<string, any> {
+  const merged: Record<string, any> = { ...(existing || {}) }
+
+  for (const [modelID, defaults] of Object.entries(DEFAULT_PROVIDER_MODELS)) {
+    const current = merged[modelID] || {}
+    const variants = { ...(defaults as any).variants, ...current.variants }
+    merged[modelID] = {
+      ...defaults,
+      ...current,
+      limit: { ...(defaults as any).limit, ...current.limit },
+      modalities: { ...(defaults as any).modalities, ...current.modalities },
+      ...(Object.keys(variants).length > 0 ? { variants } : {})
+    }
+  }
+
+  return merged
+}
 
 export const createKiroPlugin =
   (id: string) =>
@@ -29,11 +51,15 @@ export const createKiroPlugin =
 
     const requestHandler = new RequestHandler(accountManager, config, repository, client)
 
-    // Compute the base URL once so both the config hook and auth loader use the same value
     const baseURL = KIRO_CONSTANTS.BASE_URL.replace('/generateAssistantResponse', '').replace(
       '{{region}}',
-      config.default_region || 'us-east-1'
+      config.default_region || KIRO_CONSTANTS.DEFAULT_REGION
     )
+
+    await authHandler.initialize(showToast as any)
+    if (accountManager.getAccountCount() > 0) {
+      ensureOpenCodeAuthPlaceholder(id)
+    }
 
     return {
       config: async (input: any) => {
@@ -42,104 +68,25 @@ export const createKiroPlugin =
         bootstrapAuthIfNeeded(id)
 
         if (!input.provider) input.provider = {}
+        if (
+          id === KIRO_PROVIDER_ID &&
+          input.provider[KIRO_LEGACY_PROVIDER_ID] &&
+          !input.provider[id]
+        ) {
+          input.provider[id] = input.provider[KIRO_LEGACY_PROVIDER_ID]
+        }
         if (!input.provider[id]) input.provider[id] = {}
-        // Always set npm and api — these must be present regardless of whether
-        // the user has already defined the provider in their opencode.json.
+        if (!input.provider[id].name) input.provider[id].name = 'Kiro'
         input.provider[id].npm = '@ai-sdk/openai-compatible'
-        // Set the base URL at the provider level. OpenCode reads provider.api as
-        // model.api.url, which resolveSDK() uses to construct the endpoint URL.
-        // Only set if not already overridden by the user.
         if (!input.provider[id].api) {
           input.provider[id].api = baseURL
         }
-        if (!input.provider[id].models) {
-          input.provider[id].models = {
-            auto: {
-              name: 'Auto (1.0x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            // Claude Sonnet
-            'claude-sonnet-4': {
-              name: 'Claude Sonnet 4.0 (1.3x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            'claude-sonnet-4-5': {
-              name: 'Claude Sonnet 4.5 (1.3x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            'claude-sonnet-4-6': {
-              name: 'Claude Sonnet 4.6 (1.3x)',
-              limit: { context: 1000000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            // Claude Haiku
-            'claude-haiku-4-5': {
-              name: 'Claude Haiku 4.5 (0.4x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text', 'image'], output: ['text'] }
-            },
-            // Claude Opus
-            'claude-opus-4-5': {
-              name: 'Claude Opus 4.5 (2.2x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            'claude-opus-4-6': {
-              name: 'Claude Opus 4.6 (2.2x)',
-              limit: { context: 1000000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            'claude-opus-4-7': {
-              name: 'Claude Opus 4.7 (2.2x)',
-              limit: { context: 1000000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            'claude-opus-4-8': {
-              name: 'Claude Opus 4.8 (2.2x)',
-              limit: { context: 1000000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            'claude-opus-4-8-thinking': {
-              name: 'Claude Opus 4.8 Thinking (2.2x)',
-              limit: { context: 1000000, output: 64000 },
-              modalities: { input: ['text', 'image', 'pdf'], output: ['text'] }
-            },
-            // Open weight models
-            'deepseek-3.2': {
-              name: 'DeepSeek 3.2 (0.25x)',
-              limit: { context: 128000, output: 64000 },
-              modalities: { input: ['text'], output: ['text'] }
-            },
-            'glm-5': {
-              name: 'GLM-5 (0.5x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text'], output: ['text'] }
-            },
-            'minimax-m2.5': {
-              name: 'MiniMax M2.5 (0.25x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text'], output: ['text'] }
-            },
-            'minimax-m2.1': {
-              name: 'MiniMax M2.1 (0.15x)',
-              limit: { context: 200000, output: 64000 },
-              modalities: { input: ['text'], output: ['text'] }
-            },
-            'qwen3-coder-next': {
-              name: 'Qwen3 Coder Next (0.05x)',
-              limit: { context: 256000, output: 64000 },
-              modalities: { input: ['text'], output: ['text'] }
-            }
-          }
-        }
+        input.provider[id].models = mergeProviderModels(input.provider[id].models)
       },
       auth: {
         provider: id,
         loader: async (getAuth: any) => {
-          await getAuth()
+          await getAuth().catch(() => undefined)
           await authHandler.initialize(showToast as any)
 
           return {

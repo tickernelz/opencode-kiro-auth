@@ -1,13 +1,16 @@
 import type { AuthHook } from '@opencode-ai/plugin'
+import { getOidcEndpoint, parseCodeWhispererProfileArn } from '../../constants.js'
 import type { AccountRepository } from '../../infrastructure/database/account-repository.js'
 import { RegionSchema } from '../../plugin/config/schema.js'
 import * as logger from '../../plugin/logger.js'
+import { formatUsageRatio, formatUsageValue } from '../../plugin/usage-format.js'
 import { IdcAuthMethod } from './idc-auth-method.js'
 
 type ToastFunction = (message: string, variant: 'info' | 'warning' | 'success' | 'error') => void
 
 export class AuthHandler {
   private accountManager?: any
+  private initializePromise?: Promise<void>
 
   constructor(
     private config: any,
@@ -15,6 +18,15 @@ export class AuthHandler {
   ) {}
 
   async initialize(showToast?: ToastFunction): Promise<void> {
+    if (this.initializePromise) return this.initializePromise
+    this.initializePromise = this.doInitialize(showToast).catch((error) => {
+      this.initializePromise = undefined
+      throw error
+    })
+    return this.initializePromise
+  }
+
+  private async doInitialize(showToast?: ToastFunction): Promise<void> {
     const { syncFromKiroCli } = await import('../../plugin/sync/kiro-cli.js')
 
     logger.log('Auth init', { autoSyncKiroCli: !!this.config.auto_sync_kiro_cli })
@@ -33,6 +45,7 @@ export class AuthHandler {
   }
 
   private logUsageSummary(showToast?: ToastFunction): void {
+    void showToast
     if (!this.accountManager) return
     const accounts = this.accountManager.getAccounts()
     if (!accounts.length) return
@@ -42,16 +55,11 @@ export class AuthHandler {
       const limit = acc.limitCount ?? 0
       if (limit > 0) {
         const pct = Math.round((used / limit) * 100)
-        const msg = `Kiro usage (${acc.email}): ${used}/${limit} (${pct}%)`
+        const msg = `Kiro usage (${acc.email}): ${formatUsageRatio(used, limit)} (${pct}%)`
         logger.log(msg)
-        if (showToast) {
-          const variant = pct >= 90 ? 'warning' : 'info'
-          setTimeout(() => showToast(msg, variant), 3000)
-        }
       } else if (used > 0) {
-        const msg = `Kiro usage (${acc.email}): ${used} requests used`
+        const msg = `Kiro usage (${acc.email}): ${formatUsageValue(used)} credits used`
         logger.log(msg)
-        if (showToast) setTimeout(() => showToast(msg, 'info'), 3000)
       }
     }
   }
@@ -102,9 +110,14 @@ export class AuthHandler {
             placeholder: 'us-east-1',
             validate: (value: string) => {
               if (!value) return undefined
-              return RegionSchema.safeParse(value.trim()).success
-                ? undefined
-                : 'Please enter a valid AWS region'
+              const region = value.trim()
+              if (!RegionSchema.safeParse(region).success) return 'Please enter a valid AWS region'
+              try {
+                getOidcEndpoint(region)
+                return undefined
+              } catch (error) {
+                return error instanceof Error ? error.message : 'Unsupported AWS region'
+              }
             }
           }
         ],
@@ -141,9 +154,14 @@ export class AuthHandler {
             placeholder: 'us-east-1',
             validate: (value: string) => {
               if (!value) return undefined
-              return RegionSchema.safeParse(value.trim()).success
-                ? undefined
-                : 'Please enter a valid AWS region'
+              const region = value.trim()
+              if (!RegionSchema.safeParse(region).success) return 'Please enter a valid AWS region'
+              try {
+                getOidcEndpoint(region)
+                return undefined
+              } catch (error) {
+                return error instanceof Error ? error.message : 'Unsupported AWS region'
+              }
             }
           },
           {
@@ -156,10 +174,9 @@ export class AuthHandler {
             validate: (value: string) => {
               if (!value && this.config.idc_profile_arn) return undefined
               if (!value) return 'Profile ARN is required for this method'
-              return value.startsWith('arn:aws:codewhisperer:') ||
-                value.startsWith('arn:aws:qdeveloper:')
+              return parseCodeWhispererProfileArn(value.trim())
                 ? undefined
-                : 'Please enter a valid CodeWhisperer or Q Developer profile ARN'
+                : 'Please enter a supported CodeWhisperer or Q Developer profile ARN'
             }
           }
         ],

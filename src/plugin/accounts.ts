@@ -46,6 +46,7 @@ export class AccountManager {
       profileArn: r.profile_arn,
       startUrl: r.start_url || undefined,
       refreshToken: r.refresh_token,
+      refreshTokenUpdatedAt: r.refresh_token_updated_at || 0,
       accessToken: r.access_token,
       expiresAt: r.expires_at,
       rateLimitResetTime: r.rate_limit_reset,
@@ -55,7 +56,8 @@ export class AccountManager {
       failCount: r.fail_count || 0,
       lastUsed: r.last_used,
       usedCount: r.used_count,
-      limitCount: r.limit_count
+      limitCount: r.limit_count,
+      subscriptionPlan: r.subscription_plan || undefined
     }))
     return new AccountManager(accounts, strategy || 'sticky')
   }
@@ -125,18 +127,28 @@ export class AccountManager {
     }
     if (selected) {
       selected.lastUsed = now
-      selected.usedCount = (selected.usedCount || 0) + 1
       this.cursor = this.accounts.indexOf(selected)
       return selected
     }
     return null
   }
-  updateUsage(id: string, meta: { usedCount: number; limitCount: number; email?: string }): void {
+  updateUsage(
+    id: string,
+    meta: {
+      usedCount: number
+      limitCount: number
+      email?: string
+      subscriptionPlan?: string
+      lastSync?: number
+    }
+  ): void {
     const a = this.accounts.find((x) => x.id === id)
     if (a) {
       a.usedCount = meta.usedCount
       a.limitCount = meta.limitCount
+      if (meta.lastSync) a.lastSync = meta.lastSync
       if (meta.email) a.email = meta.email
+      if (meta.subscriptionPlan) a.subscriptionPlan = meta.subscriptionPlan
       if (!isPermanentError(a.unhealthyReason)) {
         a.failCount = 0
         a.isHealthy = true
@@ -182,12 +194,14 @@ export class AccountManager {
   updateFromAuth(a: ManagedAccount, auth: KiroAuthDetails): void {
     const acc = this.accounts.find((x) => x.id === a.id)
     if (acc) {
+      const previousRefreshToken = acc.refreshToken
       acc.accessToken = auth.access
       acc.expiresAt = auth.expires
       acc.lastUsed = Date.now()
       if (auth.email) acc.email = auth.email
       const p = decodeRefreshToken(auth.refresh)
       acc.refreshToken = p.refreshToken
+      acc.refreshTokenUpdatedAt = Date.now()
       if (p.profileArn) acc.profileArn = p.profileArn
       if (p.clientId) acc.clientId = p.clientId
       acc.failCount = 0
@@ -201,7 +215,7 @@ export class AccountManager {
           error: e instanceof Error ? e.message : String(e)
         })
       )
-      writeToKiroCli(acc).catch((e) =>
+      writeToKiroCli(acc, previousRefreshToken).catch((e) =>
         logger.warn('CLI write failed', {
           method: 'updateFromAuth',
           email: acc.email,

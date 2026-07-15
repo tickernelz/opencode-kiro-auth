@@ -9,6 +9,8 @@ export function runMigrations(db: Database): void {
   migrateStartUrlColumn(db)
   migrateOidcRegionColumn(db)
   migrateDropRefreshTokenUniqueIndex(db)
+  migrateSubscriptionPlanColumn(db)
+  migrateRefreshTokenUpdatedAtColumn(db)
 }
 
 function migrateToUniqueRefreshToken(db: Database): void {
@@ -88,15 +90,17 @@ function migrateRealEmailColumn(db: Database): void {
             id TEXT PRIMARY KEY, email TEXT NOT NULL, auth_method TEXT NOT NULL,
             region TEXT NOT NULL, oidc_region TEXT, client_id TEXT, client_secret TEXT, profile_arn TEXT,
             start_url TEXT,
-            refresh_token TEXT NOT NULL, access_token TEXT NOT NULL, expires_at INTEGER NOT NULL,
+            refresh_token TEXT NOT NULL, refresh_token_updated_at INTEGER DEFAULT 0,
+            access_token TEXT NOT NULL, expires_at INTEGER NOT NULL,
             rate_limit_reset INTEGER DEFAULT 0, is_healthy INTEGER DEFAULT 1, unhealthy_reason TEXT,
             recovery_time INTEGER, fail_count INTEGER DEFAULT 0, last_used INTEGER DEFAULT 0,
-            used_count INTEGER DEFAULT 0, limit_count INTEGER DEFAULT 0, last_sync INTEGER DEFAULT 0
+            used_count REAL DEFAULT 0, limit_count REAL DEFAULT 0, subscription_plan TEXT,
+            last_sync INTEGER DEFAULT 0
           )
         `)
       db.exec(`
-          INSERT INTO accounts_new (id, email, auth_method, region, oidc_region, client_id, client_secret, profile_arn, start_url, refresh_token, access_token, expires_at, rate_limit_reset, is_healthy, unhealthy_reason, recovery_time, fail_count, last_used, used_count, limit_count, last_sync)
-          SELECT id, email, auth_method, region, NULL, client_id, client_secret, profile_arn, NULL, refresh_token, access_token, expires_at, COALESCE(rate_limit_reset, 0), COALESCE(is_healthy, 1), unhealthy_reason, recovery_time, COALESCE(fail_count, 0), COALESCE(last_used, 0), 0, 0, 0 FROM accounts
+          INSERT INTO accounts_new (id, email, auth_method, region, oidc_region, client_id, client_secret, profile_arn, start_url, refresh_token, refresh_token_updated_at, access_token, expires_at, rate_limit_reset, is_healthy, unhealthy_reason, recovery_time, fail_count, last_used, used_count, limit_count, subscription_plan, last_sync)
+          SELECT id, email, auth_method, region, NULL, client_id, client_secret, profile_arn, NULL, refresh_token, 0, access_token, expires_at, COALESCE(rate_limit_reset, 0), COALESCE(is_healthy, 1), unhealthy_reason, recovery_time, COALESCE(fail_count, 0), COALESCE(last_used, 0), 0, 0, NULL, 0 FROM accounts
         `)
       db.exec('DROP TABLE accounts')
       db.exec('ALTER TABLE accounts_new RENAME TO accounts')
@@ -107,12 +111,33 @@ function migrateRealEmailColumn(db: Database): void {
   } else {
     const needed: Record<string, string> = {
       fail_count: 'INTEGER DEFAULT 0',
-      used_count: 'INTEGER DEFAULT 0',
-      limit_count: 'INTEGER DEFAULT 0',
+      used_count: 'REAL DEFAULT 0',
+      limit_count: 'REAL DEFAULT 0',
+      subscription_plan: 'TEXT',
       last_sync: 'INTEGER DEFAULT 0'
     }
     for (const [n, d] of Object.entries(needed)) {
       if (!names.has(n)) db.exec(`ALTER TABLE accounts ADD COLUMN ${n} ${d}`)
+    }
+  }
+}
+
+function migrateSubscriptionPlanColumn(db: Database): void {
+  const columns = db.prepare('PRAGMA table_info(accounts)').all() as any[]
+  const names = new Set(columns.map((c) => c.name))
+  if (!names.has('subscription_plan')) {
+    db.exec('ALTER TABLE accounts ADD COLUMN subscription_plan TEXT')
+  }
+}
+
+function migrateRefreshTokenUpdatedAtColumn(db: Database): void {
+  const columns = db.prepare('PRAGMA table_info(accounts)').all() as any[]
+  if (!columns.some((column) => column.name === 'refresh_token_updated_at')) {
+    try {
+      db.exec('ALTER TABLE accounts ADD COLUMN refresh_token_updated_at INTEGER DEFAULT 0')
+    } catch (error) {
+      const currentColumns = db.prepare('PRAGMA table_info(accounts)').all() as any[]
+      if (!currentColumns.some((column) => column.name === 'refresh_token_updated_at')) throw error
     }
   }
 }

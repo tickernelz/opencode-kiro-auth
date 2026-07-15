@@ -1,6 +1,6 @@
 import { GenerateAssistantResponseCommand } from '@aws/codewhisperer-streaming-client'
 import { describe, expect, test } from 'bun:test'
-import { clearSdkClientCache, createSdkClient } from '../plugin/sdk-client'
+import { clearSdkClientCache, createSdkClient, getSdkEndpoint } from '../plugin/sdk-client'
 import type { KiroAuthDetails } from '../plugin/types'
 
 function auth(): KiroAuthDetails {
@@ -15,22 +15,10 @@ function auth(): KiroAuthDetails {
 }
 
 describe('SDK client', () => {
-  test('uses Kiro CLI-style standard SDK retries for throttling', async () => {
+  async function captureEffortRequest(modelId: string, additionalModelRequestFields?: object) {
     clearSdkClientCache()
 
-    const client = createSdkClient(auth(), 'us-east-1')
-
-    expect(await client.config.maxAttempts()).toBe(3)
-    const retryMode = client.config.retryMode
-    expect(typeof retryMode === 'function' ? await retryMode() : retryMode).toBe('standard')
-
-    clearSdkClientCache()
-  })
-
-  test('injects effort before content-length is computed', async () => {
-    clearSdkClientCache()
-
-    const client = createSdkClient(auth(), 'us-east-1', 'max')
+    const client = createSdkClient(auth(), 'us-east-1', 'kiro-runtime', 'max')
     let capturedRequest: any
 
     client.middlewareStack.add(
@@ -48,11 +36,12 @@ describe('SDK client', () => {
         currentMessage: {
           userInputMessage: {
             content: 'hello',
-            modelId: 'claude-opus-4.7',
+            modelId,
             origin: 'AI_EDITOR'
           }
         }
-      }
+      },
+      additionalModelRequestFields: additionalModelRequestFields as any
     })
 
     await client.send(command).catch((error) => {
@@ -63,11 +52,56 @@ describe('SDK client', () => {
       typeof capturedRequest.body === 'string'
         ? capturedRequest.body
         : Buffer.from(capturedRequest.body).toString('utf8')
-    const body = JSON.parse(bodyText)
-
-    expect(body.additionalModelRequestFields.output_config.effort).toBe('max')
-    expect(Number(capturedRequest.headers['content-length'])).toBe(Buffer.byteLength(bodyText))
 
     clearSdkClientCache()
+    return { body: JSON.parse(bodyText), bodyText, capturedRequest }
+  }
+
+  test('uses documented FIPS endpoints for public GovCloud traffic', () => {
+    expect(getSdkEndpoint('us-gov-west-1', 'kiro-runtime')).toBe(
+      'https://q-fips.us-gov-west-1.amazonaws.com'
+    )
+    expect(getSdkEndpoint('us-gov-east-1', 'legacy-q')).toBe(
+      'https://q-fips.us-gov-east-1.amazonaws.com'
+    )
+  })
+
+  test('uses Kiro CLI-style standard SDK retries for throttling', async () => {
+    clearSdkClientCache()
+
+    const client = createSdkClient(auth(), 'us-east-1')
+
+    expect(await client.config.maxAttempts()).toBe(3)
+    const retryMode = client.config.retryMode
+    expect(typeof retryMode === 'function' ? await retryMode() : retryMode).toBe('standard')
+
+    clearSdkClientCache()
+  })
+
+  test('injects output-config effort before content-length is computed', async () => {
+    const { body, bodyText, capturedRequest } = await captureEffortRequest('claude-opus-4.7', {
+      existing: true,
+      output_config: { existingOutput: true }
+    })
+
+    expect(body.additionalModelRequestFields).toEqual({
+      existing: true,
+      thinking: { type: 'adaptive', display: 'summarized' },
+      output_config: { existingOutput: true, effort: 'max' }
+    })
+    expect(Number(capturedRequest.headers['content-length'])).toBe(Buffer.byteLength(bodyText))
+  })
+
+  test('injects reasoning effort for GPT-5.6 without Claude-only fields', async () => {
+    const { body, bodyText, capturedRequest } = await captureEffortRequest('gpt-5.6-sol', {
+      existing: true,
+      reasoning: { existingReasoning: true }
+    })
+
+    expect(body.additionalModelRequestFields).toEqual({
+      existing: true,
+      reasoning: { existingReasoning: true, effort: 'max' }
+    })
+    expect(Number(capturedRequest.headers['content-length'])).toBe(Buffer.byteLength(bodyText))
   })
 })

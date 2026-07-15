@@ -121,28 +121,36 @@ export function parseStreamBuffer(buffer: string): { events: any[]; remaining: s
   return { events, remaining }
 }
 
-export function findRealTag(buffer: string, tag: string): number {
-  const codeBlockPattern = /```[\s\S]*?```/g
-  const codeBlocks: Array<[number, number]> = []
+function isQuoteCharAt(text: string, index: number): boolean {
+  if (index < 0 || index >= text.length) return false
+  const ch = text[index]
+  return ch === '"' || ch === "'" || ch === '`'
+}
 
-  let match: RegExpExecArray | null
-  while ((match = codeBlockPattern.exec(buffer)) !== null) {
-    codeBlocks.push([match.index, match.index + match[0].length])
+function isInsideCodeFence(text: string, index: number): boolean {
+  let fenceCount = 0
+  let pos = 0
+
+  while ((pos = text.indexOf('```', pos)) !== -1 && pos < index) {
+    fenceCount++
+    pos += 3
   }
 
-  let pos = 0
+  return fenceCount % 2 === 1
+}
+
+export function findRealTag(buffer: string, tag: string, startIndex = 0): number {
+  let pos = Math.max(0, startIndex)
+
   while ((pos = buffer.indexOf(tag, pos)) !== -1) {
-    let inCodeBlock = false
-    for (const [start, end] of codeBlocks) {
-      if (pos >= start && pos < end) {
-        inCodeBlock = true
-        break
-      }
-    }
-    if (!inCodeBlock) {
+    const hasQuoteBefore = isQuoteCharAt(buffer, pos - 1)
+    const hasQuoteAfter = isQuoteCharAt(buffer, pos + tag.length)
+
+    if (!hasQuoteBefore && !hasQuoteAfter && !isInsideCodeFence(buffer, pos)) {
       return pos
     }
-    pos += tag.length
+
+    pos += 1
   }
 
   return -1

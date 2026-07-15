@@ -22,6 +22,7 @@ export class AccountRepository {
       profileArn: r.profile_arn,
       startUrl: r.start_url || undefined,
       refreshToken: r.refresh_token,
+      refreshTokenUpdatedAt: r.refresh_token_updated_at || 0,
       accessToken: r.access_token,
       expiresAt: r.expires_at,
       rateLimitResetTime: r.rate_limit_reset,
@@ -32,6 +33,7 @@ export class AccountRepository {
       lastUsed: r.last_used,
       usedCount: r.used_count,
       limitCount: r.limit_count,
+      subscriptionPlan: r.subscription_plan || undefined,
       lastSync: r.last_sync
     }))
 

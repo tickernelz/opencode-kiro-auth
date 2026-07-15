@@ -88,6 +88,45 @@ describe('Kiro CLI account sync', () => {
         [synced, staleSameProfile, stalePreviouslySynced, manualOtherAccount],
         [synced]
       )
-    ).toEqual(['old-id', 'old-cli-synced-id'])
+    ).toEqual(['old-id'])
+  })
+
+  test('does not deactivate unrelated previously synced accounts with the same auth method', () => {
+    const synced = {
+      id: 'current-id',
+      email: 'current@example.com',
+      authMethod: 'idc' as const,
+      clientId: 'current-client',
+      profileArn: 'arn:aws:codewhisperer:us-east-1:123:profile/current'
+    }
+    const unrelated = {
+      id: 'other-id',
+      email: 'other@example.com',
+      auth_method: 'idc',
+      client_id: 'other-client',
+      profile_arn: 'arn:aws:codewhisperer:us-east-1:123:profile/other',
+      last_sync: Date.now() - 1000
+    }
+
+    expect(getStaleKiroCliAccountIds([synced, unrelated], [synced])).toEqual([])
+  })
+
+  test('does not treat a shared email as identity when stable identifiers differ', () => {
+    const synced = {
+      id: 'current-id',
+      email: 'shared@example.com',
+      authMethod: 'idc' as const,
+      clientId: 'current-client',
+      profileArn: 'profile-current'
+    }
+    const unrelated = {
+      id: 'other-id',
+      email: 'shared@example.com',
+      auth_method: 'idc',
+      client_id: 'other-client',
+      profile_arn: 'profile-other'
+    }
+
+    expect(getStaleKiroCliAccountIds([synced, unrelated], [synced])).toEqual([])
   })
 })

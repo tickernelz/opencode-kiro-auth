@@ -1,5 +1,3 @@
-import { isPermanentError } from '../health'
-
 export type SyncedCliAccount = {
   id: string
   email: string
@@ -27,19 +25,11 @@ export function getStaleKiroCliAccountIds(
       const email = account.email
       const clientId = account.client_id || account.clientId
       const profileArn = account.profile_arn || account.profileArn
-      const lastSync = account.last_sync || account.lastSync || 0
-      const unhealthyReason = account.unhealthy_reason || account.unhealthyReason
-
       return syncedAccounts.some((synced) => {
-        const sameAuthMethod = authMethod === synced.authMethod
-        const sameEmail = !!email && email === synced.email
-        const sameClient = !!clientId && clientId === synced.clientId
-        const sameProfile = !!profileArn && profileArn === synced.profileArn
-        const sameIdentity = sameEmail || sameClient || sameProfile
-
-        if (sameAuthMethod && sameIdentity) return true
-        if (sameAuthMethod && lastSync > 0) return true
-        return isPermanentError(unhealthyReason) && sameIdentity
+        if (authMethod !== synced.authMethod) return false
+        if (profileArn && synced.profileArn) return profileArn === synced.profileArn
+        if (clientId && synced.clientId) return clientId === synced.clientId
+        return !!email && email === synced.email
       })
     })
     .map((account) => account.id)

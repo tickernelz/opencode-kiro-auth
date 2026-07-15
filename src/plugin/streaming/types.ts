@@ -1,3 +1,5 @@
+import type { ThinkingLexState } from './thinking-lexer.js'
+
 export interface StreamEvent {
   type: string
   message?: any
@@ -10,12 +12,16 @@ export interface StreamEvent {
 export interface StreamState {
   thinkingRequested: boolean
   buffer: string
+  pendingTextBeforeThinking: string
   inThinking: boolean
   thinkingExtracted: boolean
   thinkingBlockIndex: number | null
   textBlockIndex: number | null
   nextBlockIndex: number
   stoppedBlocks: Set<number>
+  stripThinkingLeadingNewline: boolean
+  stripTextLeadingNewlinesAfterThinking: boolean
+  thinkingLex: ThinkingLexState
 }
 
 export interface ToolCallState {

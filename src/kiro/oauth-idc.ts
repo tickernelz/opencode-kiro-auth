@@ -1,5 +1,11 @@
-import { KIRO_AUTH_SERVICE, KIRO_CONSTANTS, buildUrl, normalizeRegion } from '../constants'
+import { KIRO_AUTH_SERVICE, KIRO_CONSTANTS, getOidcEndpoint, normalizeRegion } from '../constants'
 import type { KiroRegion } from '../plugin/types'
+import {
+  deleteCachedOidcClient,
+  getCachedOidcClient,
+  putCachedOidcClient,
+  type CachedOidcClient
+} from './oidc-client-cache'
 
 export interface KiroIDCAuthorization {
   verificationUrl: string
@@ -25,15 +31,17 @@ export interface KiroIDCTokenResult {
   authMethod: 'idc'
 }
 
+const OIDC_REQUEST_TIMEOUT_MS = 30000
+
 export async function authorizeKiroIDC(
   region?: KiroRegion,
   startUrl?: string
 ): Promise<KiroIDCAuthorization> {
   const effectiveRegion = normalizeRegion(region)
-  const ssoOIDCEndpoint = buildUrl(KIRO_AUTH_SERVICE.SSO_OIDC_ENDPOINT, effectiveRegion)
+  const ssoOIDCEndpoint = getOidcEndpoint(effectiveRegion)
   const effectiveStartUrl = startUrl || KIRO_AUTH_SERVICE.BUILDER_ID_START_URL
 
-  try {
+  const registerClient = async (): Promise<CachedOidcClient> => {
     const registerResponse = await fetch(`${ssoOIDCEndpoint}/client/register`, {
       method: 'POST',
       headers: {
@@ -45,7 +53,8 @@ export async function authorizeKiroIDC(
         clientType: 'public',
         scopes: KIRO_AUTH_SERVICE.SCOPES,
         grantTypes: ['urn:ietf:params:oauth:grant-type:device_code', 'refresh_token']
-      })
+      }),
+      signal: AbortSignal.timeout(OIDC_REQUEST_TIMEOUT_MS)
     })
 
     if (!registerResponse.ok) {
@@ -55,13 +64,19 @@ export async function authorizeKiroIDC(
     }
 
     const registerData = await registerResponse.json()
-    const { clientId, clientSecret } = registerData
+    const { clientId, clientSecret, clientSecretExpiresAt } = registerData
 
     if (!clientId || !clientSecret) {
       const error = new Error('Client registration response missing clientId or clientSecret')
       throw error
     }
 
+    const client = { clientId, clientSecret, clientSecretExpiresAt }
+    putCachedOidcClient(effectiveRegion, effectiveStartUrl, KIRO_AUTH_SERVICE.SCOPES, client)
+    return client
+  }
+
+  const startDeviceAuthorization = async (client: CachedOidcClient) => {
     const deviceAuthResponse = await fetch(`${ssoOIDCEndpoint}/device_authorization`, {
       method: 'POST',
       headers: {
@@ -69,10 +84,11 @@ export async function authorizeKiroIDC(
         'User-Agent': KIRO_CONSTANTS.USER_AGENT
       },
       body: JSON.stringify({
-        clientId,
-        clientSecret,
+        clientId: client.clientId,
+        clientSecret: client.clientSecret,
         startUrl: effectiveStartUrl
-      })
+      }),
+      signal: AbortSignal.timeout(OIDC_REQUEST_TIMEOUT_MS)
     })
 
     if (!deviceAuthResponse.ok) {
@@ -104,14 +120,28 @@ export async function authorizeKiroIDC(
       verificationUriComplete,
       userCode,
       deviceCode,
-      clientId,
-      clientSecret,
+      clientId: client.clientId,
+      clientSecret: client.clientSecret,
       interval,
       expiresIn,
       region: effectiveRegion,
       startUrl: effectiveStartUrl
     }
+  }
+
+  let client =
+    getCachedOidcClient(effectiveRegion, effectiveStartUrl, KIRO_AUTH_SERVICE.SCOPES) ||
+    (await registerClient())
+
+  try {
+    return await startDeviceAuthorization(client)
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/invalid_client|expired/i.test(message)) {
+      deleteCachedOidcClient(effectiveRegion, effectiveStartUrl, KIRO_AUTH_SERVICE.SCOPES)
+      client = await registerClient()
+      return await startDeviceAuthorization(client)
+    }
     throw error
   }
 }
@@ -130,18 +160,31 @@ export async function pollKiroIDCToken(
   }
 
   const effectiveRegion = normalizeRegion(region)
-  const ssoOIDCEndpoint = buildUrl(KIRO_AUTH_SERVICE.SSO_OIDC_ENDPOINT, effectiveRegion)
+  const ssoOIDCEndpoint = getOidcEndpoint(effectiveRegion)
 
-  const maxAttempts = Math.floor(expiresIn / interval)
-  let currentInterval = interval * 1000
+  if (
+    !Number.isFinite(interval) ||
+    interval <= 0 ||
+    !Number.isFinite(expiresIn) ||
+    expiresIn <= 0
+  ) {
+    throw new Error('Token polling received an invalid interval or expiration')
+  }
+
+  const deadline = Date.now() + expiresIn * 1000
+  let currentInterval = Math.max(interval, 1) * 1000
   let attempts = 0
 
-  while (attempts < maxAttempts) {
+  while (Date.now() < deadline) {
     attempts++
 
-    await new Promise((resolve) => setTimeout(resolve, currentInterval))
+    const sleepMs = Math.min(currentInterval, deadline - Date.now())
+    if (sleepMs <= 0) break
+    await new Promise((resolve) => setTimeout(resolve, sleepMs))
+    if (Date.now() >= deadline) break
 
     try {
+      const remainingMs = Math.max(1, deadline - Date.now())
       const tokenResponse = await fetch(`${ssoOIDCEndpoint}/token`, {
         method: 'POST',
         headers: {
@@ -153,7 +196,8 @@ export async function pollKiroIDCToken(
           clientSecret,
           deviceCode,
           grantType: 'urn:ietf:params:oauth:grant-type:device_code'
-        })
+        }),
+        signal: AbortSignal.timeout(Math.min(30000, remainingMs))
       })
 
       const responseText = await tokenResponse.text().catch(() => '')
@@ -234,19 +278,18 @@ export async function pollKiroIDCToken(
     } catch (error) {
       if (
         error instanceof Error &&
-        (error.message.includes('expired') ||
-          error.message.includes('denied') ||
-          error.message.includes('failed'))
+        (error.message.includes('Device code has expired') ||
+          error.message.includes('Authorization was denied') ||
+          error.message.startsWith('Token polling failed:') ||
+          error.message.startsWith('Token request failed'))
       ) {
         throw error
       }
 
-      if (attempts >= maxAttempts) {
-        const finalError = new Error(
+      if (Date.now() >= deadline)
+        throw new Error(
           `Token polling failed after ${attempts} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`
         )
-        throw finalError
-      }
     }
   }
 

@@ -1,5 +1,5 @@
 import type { AuthOuathResult } from '@opencode-ai/plugin'
-import { exec } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { extractRegionFromArn, normalizeRegion } from '../../constants.js'
 import type { AccountRepository } from '../../infrastructure/database/account-repository.js'
 import { authorizeKiroIDC, pollKiroIDCToken } from '../../kiro/oauth-idc.js'
@@ -11,17 +11,20 @@ import type { KiroRegion, ManagedAccount } from '../../plugin/types.js'
 import { fetchUsageLimits } from '../../plugin/usage.js'
 
 const openBrowser = (url: string) => {
-  const escapedUrl = url.replace(/"/g, '\\"')
+  if (new URL(url).protocol !== 'https:') {
+    logger.warn('Refusing to open a non-HTTPS authentication URL')
+    return
+  }
   const platform = process.platform
-  const cmd =
+  const [command, args] =
     platform === 'win32'
-      ? `cmd /c start "" "${escapedUrl}"`
+      ? ['cmd', ['/c', 'start', '', url]]
       : platform === 'darwin'
-        ? `open "${escapedUrl}"`
-        : `xdg-open "${escapedUrl}"`
-  exec(cmd, (error) => {
-    if (error) logger.warn(`Browser error: ${error.message}`)
-  })
+        ? ['open', [url]]
+        : ['xdg-open', [url]]
+  const child = spawn(command, args, { detached: true, shell: false, stdio: 'ignore' })
+  child.on('error', (error) => logger.warn(`Browser error: ${error.message}`))
+  child.unref()
 }
 
 function normalizeStartUrl(raw: string | undefined): string | undefined {
@@ -30,14 +33,28 @@ function normalizeStartUrl(raw: string | undefined): string | undefined {
   if (!trimmed) return undefined
 
   const url = new URL(trimmed)
+  if (url.protocol !== 'https:') {
+    throw new Error('IAM Identity Center Start URL must use HTTPS')
+  }
   url.hash = ''
   url.search = ''
 
-  // Normalize common portal URL shapes to end in `/start` (AWS Builder ID and IAM Identity Center)
+  // Normalize common AWS access portal URLs without breaking GovCloud directory URLs.
   if (url.pathname.endsWith('/start/')) url.pathname = url.pathname.replace(/\/start\/$/, '/start')
-  if (!url.pathname.endsWith('/start')) url.pathname = url.pathname.replace(/\/+$/, '') + '/start'
+  if ((url.pathname === '' || url.pathname === '/') && url.hostname.endsWith('.awsapps.com')) {
+    url.pathname = '/start'
+  }
 
   return url.toString()
+}
+
+function canBuildPortalDeviceUrl(startUrl: string): boolean {
+  try {
+    const url = new URL(startUrl)
+    return /\/start\/?$/.test(url.pathname)
+  } catch {
+    return false
+  }
 }
 
 function buildDeviceUrl(startUrl: string, userCode: string): string {
@@ -78,9 +95,10 @@ export class IdcAuthMethod {
     // If a custom Identity Center start URL is provided, prefer the portal device page.
     // This avoids the AWS Builder ID device page (which often prompts for an email)
     // and routes the user into their org's IAM Identity Center sign-in.
-    const verificationUrl = startUrl
-      ? buildDeviceUrl(startUrl, auth.userCode)
-      : auth.verificationUriComplete || auth.verificationUrl
+    const verificationUrl =
+      startUrl && canBuildPortalDeviceUrl(startUrl)
+        ? buildDeviceUrl(startUrl, auth.userCode)
+        : auth.verificationUriComplete || auth.verificationUrl
 
     // Open the *AWS* verification page directly (no local web server).
     openBrowser(verificationUrl)
@@ -122,7 +140,7 @@ export class IdcAuthMethod {
             })
             if (startUrl && !profileArn) {
               throw new Error(
-                `Missing profile ARN for IAM Identity Center. Set "idc_profile_arn" in ~/.config/opencode/kiro.json, or run "kiro-cli profile" once so it can be auto-detected. Original error: ${
+                `Missing profile ARN for IAM Identity Center. Set "idc_profile_arn" in ~/.config/opencode/kiro.json, or use "kiro-cli whoami --format json" to find the active profile. Original error: ${
                   e instanceof Error ? e.message : String(e)
                 }`
               )
@@ -139,7 +157,11 @@ export class IdcAuthMethod {
                 email: undefined
               }
             } else {
-              throw e
+              logger.warn('Usage is unavailable; continuing authentication without quota data', {
+                serviceRegion,
+                profileArn,
+                error: errMsg
+              })
             }
           }
 
@@ -167,13 +189,16 @@ export class IdcAuthMethod {
             profileArn,
             startUrl: startUrl || undefined,
             refreshToken: token.refreshToken,
+            refreshTokenUpdatedAt: Date.now(),
             accessToken: token.accessToken,
             expiresAt: token.expiresAt,
             rateLimitResetTime: 0,
             isHealthy: true,
             failCount: 0,
             usedCount: usage.usedCount,
-            limitCount: usage.limitCount
+            limitCount: usage.limitCount,
+            subscriptionPlan: usage.subscriptionPlan,
+            lastSync: Date.now()
           }
 
           await this.repository.save(acc)
@@ -184,7 +209,7 @@ export class IdcAuthMethod {
           const err = e instanceof Error ? e : new Error(String(e))
           logger.error('IDC auth callback failed', err)
           throw new Error(
-            `IDC authorization failed: ${err.message}. Check ~/.config/opencode/kiro-logs/plugin.log for details. If this is an Identity Center account, ensure you have selected an AWS Q Developer/CodeWhisperer profile (try: kiro-cli profile).`
+            `IDC authorization failed: ${err.message}. Check ~/.config/opencode/kiro-logs/plugin.log for details. If this is an Identity Center account, verify the active AWS Q Developer/CodeWhisperer profile with "kiro-cli whoami --format json".`
           )
         }
       }
