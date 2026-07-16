@@ -4,6 +4,9 @@ import type { CodeWhispererMessage } from '../../plugin/types'
 // because visible filler can be learned and echoed as an assistant response.
 export const SYNTHETIC_TURN_CONTENT = '\u2063'
 
+// Unlike history padding, the active user turn must give the model an actionable instruction.
+export const CONTINUE_TURN_CONTENT = 'Continue.'
+
 export function getToolResultText(value: any): string {
   return unwrapSystemReminders(getContentText(value))
 }

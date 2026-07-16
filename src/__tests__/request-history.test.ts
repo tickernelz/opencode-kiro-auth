@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { SYNTHETIC_TURN_CONTENT } from '../infrastructure/transformers/message-transformer.js'
+import {
+  CONTINUE_TURN_CONTENT,
+  SYNTHETIC_TURN_CONTENT
+} from '../infrastructure/transformers/message-transformer.js'
 import { transformToSdkRequest } from '../plugin/request.js'
 import type { KiroAuthDetails } from '../plugin/types.js'
 
@@ -61,7 +64,7 @@ describe('request history', () => {
     expect(JSON.stringify(state)).not.toContain('[system:')
   })
 
-  test('uses invisible content for missing and current synthetic turns', () => {
+  test('keeps history padding invisible and makes current continuation turns explicit', () => {
     const state = transform([
       { role: 'user', content: 'First question.' },
       { role: 'assistant', content: '' },
@@ -85,10 +88,10 @@ describe('request history', () => {
         content: [{ type: 'tool_use', id: 'tool-1', name: 'read', input: {} }]
       }
     ])
-    expect(assistantState.currentMessage.userInputMessage?.content).toBe(SYNTHETIC_TURN_CONTENT)
+    expect(assistantState.currentMessage.userInputMessage?.content).toBe(CONTINUE_TURN_CONTENT)
 
     const emptyState = transform([{ role: 'user', content: '' }])
-    expect(emptyState.currentMessage.userInputMessage?.content).toBe(SYNTHETIC_TURN_CONTENT)
+    expect(emptyState.currentMessage.userInputMessage?.content).toBe(CONTINUE_TURN_CONTENT)
   })
 
   test('unwraps system-reminder transport tags in tool results', () => {

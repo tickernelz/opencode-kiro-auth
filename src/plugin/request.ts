@@ -8,6 +8,7 @@ import {
   injectSystemPrompt
 } from '../infrastructure/transformers/history-builder.js'
 import {
+  CONTINUE_TURN_CONTENT,
   SYNTHETIC_TURN_CONTENT,
   findOriginalToolCall,
   getContentText,
@@ -142,7 +143,7 @@ function buildCodeWhispererRequest(
     if (arm.content || arm.toolUses) {
       history.push({ assistantResponseMessage: arm })
     }
-    curContent = SYNTHETIC_TURN_CONTENT
+    curContent = CONTINUE_TURN_CONTENT
   } else {
     const prev = history[history.length - 1]
     if (prev && !prev.assistantResponseMessage)
@@ -184,7 +185,7 @@ function buildCodeWhispererRequest(
         }
       }
     } else curContent = getContentText(curMsg)
-    if (!curContent) curContent = curTrs.length ? 'Tool results provided.' : SYNTHETIC_TURN_CONTENT
+    if (!curContent) curContent = curTrs.length ? 'Tool results provided.' : CONTINUE_TURN_CONTENT
   }
   const request: CodeWhispererRequest = {
     conversationState: {
