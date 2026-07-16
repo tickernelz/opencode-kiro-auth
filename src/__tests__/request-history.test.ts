@@ -64,7 +64,7 @@ describe('request history', () => {
     expect(JSON.stringify(state)).not.toContain('[system:')
   })
 
-  test('keeps history padding invisible and makes current continuation turns explicit', () => {
+  test('keeps history padding invisible and makes assistant-ended continuations explicit', () => {
     const state = transform([
       { role: 'user', content: 'First question.' },
       { role: 'assistant', content: '' },
@@ -91,7 +91,33 @@ describe('request history', () => {
     expect(assistantState.currentMessage.userInputMessage?.content).toBe(CONTINUE_TURN_CONTENT)
 
     const emptyState = transform([{ role: 'user', content: '' }])
-    expect(emptyState.currentMessage.userInputMessage?.content).toBe(CONTINUE_TURN_CONTENT)
+    expect(emptyState.currentMessage.userInputMessage?.content).toBe('')
+  })
+
+  test('keeps structured tool-result content empty like Kiro CLI', () => {
+    const state = transform([
+      { role: 'user', content: 'Read a file.' },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'tool-1', name: 'read', input: {} }]
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'tool-1',
+            content: [{ type: 'text', text: 'file contents' }]
+          }
+        ]
+      }
+    ])
+
+    expect(state.currentMessage.userInputMessage?.content).toBe('')
+    expect(
+      state.currentMessage.userInputMessage?.userInputMessageContext?.toolResults?.[0]?.content?.[0]
+        ?.text
+    ).toBe('file contents')
   })
 
   test('unwraps system-reminder transport tags in tool results', () => {
