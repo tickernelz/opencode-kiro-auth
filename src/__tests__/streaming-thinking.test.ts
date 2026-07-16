@@ -110,6 +110,47 @@ describe('thinking stream transform', () => {
     expect(textFrom(deltas)).toBe('pre <thinking>not reasoning</thinking> answer')
   })
 
+  test('removes orphan system-reminder closing tags split across SDK chunks', async () => {
+    const deltas = await collectDeltas(
+      ['Visible answer.\nPending internal work\n</system-rem', 'inder>\nContinue here.'],
+      false
+    )
+
+    expect(textFrom(deltas)).toBe('Visible answer.\nPending internal work\nContinue here.')
+  })
+
+  test('removes balanced standalone system-reminder delimiters but keeps their content', async () => {
+    const deltas = await collectDeltas(
+      ['Visible answer.\n<system-rem', 'inder>\nPrivate instruction\n</system-reminder>\nDone.'],
+      false
+    )
+
+    expect(textFrom(deltas)).toBe('Visible answer.\nPrivate instruction\nDone.')
+  })
+
+  test('removes an orphan system-reminder closing tag after a thinking block', async () => {
+    const deltas = await collectDeltas(
+      ['<thinking>Plan</thinking>Answer\nPrivate todo\n</system-reminder>'],
+      true
+    )
+
+    expect(reasoningFrom(deltas)).toBe('Plan')
+    expect(textFrom(deltas)).toBe('Answer\nPrivate todo\n')
+  })
+
+  test('preserves system-reminder tags in normal prose and fenced code', async () => {
+    const deltas = await collectDeltas(
+      [
+        'Use `<system-reminder>` inline.\n```text\n<system-reminder>\nliteral\n</system-reminder>\n```'
+      ],
+      false
+    )
+
+    expect(textFrom(deltas)).toBe(
+      'Use `<system-reminder>` inline.\n```text\n<system-reminder>\nliteral\n</system-reminder>\n```'
+    )
+  })
+
   test('does not close thinking on quoted or backticked literal end tags', async () => {
     const deltas = await collectDeltas(
       ['<thinking>quoted `</thinking>` still thinking</thinking>\n\nDone'],

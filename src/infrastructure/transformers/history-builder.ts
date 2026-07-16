@@ -5,7 +5,7 @@ import {
   extractTextFromParts
 } from '../../plugin/image-handler.js'
 import type { CodeWhispererMessage } from '../../plugin/types'
-import { SYNTHETIC_TURN_CONTENT, getContentText } from './message-transformer.js'
+import { SYNTHETIC_TURN_CONTENT, getContentText, getToolResultText } from './message-transformer.js'
 import { deduplicateToolResults } from './tool-transformer.js'
 
 /**
@@ -94,7 +94,7 @@ export function buildHistory(msgs: any[], resolved: string): CodeWhispererMessag
         for (const p of m.content) {
           if (p.type === 'tool_result') {
             trs.push({
-              content: [{ text: getContentText(p.content || p) }],
+              content: [{ text: getToolResultText(p.content || p) }],
               status: 'success',
               toolUseId: p.tool_use_id
             })
@@ -123,13 +123,13 @@ export function buildHistory(msgs: any[], resolved: string): CodeWhispererMessag
       if (m.tool_results) {
         for (const tr of m.tool_results)
           trs.push({
-            content: [{ text: getContentText(tr) }],
+            content: [{ text: getToolResultText(tr) }],
             status: 'success',
             toolUseId: tr.tool_call_id
           })
       } else {
         trs.push({
-          content: [{ text: getContentText(m) }],
+          content: [{ text: getToolResultText(m) }],
           status: 'success',
           toolUseId: m.tool_call_id
         })

@@ -4,6 +4,14 @@ import type { CodeWhispererMessage } from '../../plugin/types'
 // because visible filler can be learned and echoed as an assistant response.
 export const SYNTHETIC_TURN_CONTENT = '\u2063'
 
+export function getToolResultText(value: any): string {
+  return unwrapSystemReminders(getContentText(value))
+}
+
+function unwrapSystemReminders(text: string): string {
+  return text.replace(/<system-reminder>\s*([\s\S]*?)\s*<\/system-reminder>/g, '$1')
+}
+
 export function sanitizeHistory(history: CodeWhispererMessage[]): CodeWhispererMessage[] {
   const result: CodeWhispererMessage[] = []
   for (let i = 0; i < history.length; i++) {
@@ -85,6 +93,12 @@ export function mergeAdjacentMessages(msgs: any[]): any[] {
 export function getContentText(m: any): string {
   if (!m) return ''
   if (typeof m === 'string') return m
+  if (Array.isArray(m)) {
+    return m
+      .filter((part: any) => part?.type === 'text' || typeof part?.text === 'string')
+      .map((part: any) => part.text || '')
+      .join('')
+  }
   if (typeof m.content === 'string') return m.content
   if (Array.isArray(m.content))
     return m.content

@@ -4,6 +4,7 @@ import { estimateTokens } from '../response.js'
 import { convertToOpenAI } from './openai-converter.js'
 import { parseStreamBuffer } from './stream-parser.js'
 import { createStreamState, stopBlock } from './stream-state.js'
+import { SystemReminderFilter } from './system-reminder-filter.js'
 import { createContentDeltaEvents, flushContentDeltaEvents } from './thinking-parser.js'
 import { ToolCallState } from './types.js'
 
@@ -14,6 +15,7 @@ export async function* transformKiroStream(
   thinkingRequested = model.endsWith('-thinking')
 ): AsyncGenerator<any> {
   const streamState = createStreamState(thinkingRequested)
+  const systemReminderFilter = new SystemReminderFilter()
 
   if (!response.body) {
     throw new Error('Response body is null')
@@ -46,10 +48,12 @@ export async function* transformKiroStream(
         if (event.type === 'contextUsage' && event.data.contextUsagePercentage) {
           contextUsagePercentage = event.data.contextUsagePercentage
         } else if (event.type === 'content' && event.data) {
-          totalContent += event.data
-          textOnlyContent += event.data
+          const text = systemReminderFilter.push(event.data)
+          if (!text) continue
+          totalContent += text
+          textOnlyContent += text
 
-          for (const ev of createContentDeltaEvents(event.data, streamState)) {
+          for (const ev of createContentDeltaEvents(text, streamState)) {
             const converted = convertToOpenAI(ev, conversationId, model)
             if (converted !== null) yield converted
           }
@@ -94,6 +98,16 @@ export async function* transformKiroStream(
             currentToolCall = null
           }
         }
+      }
+    }
+
+    const trailingText = systemReminderFilter.flush()
+    if (trailingText) {
+      totalContent += trailingText
+      textOnlyContent += trailingText
+      for (const ev of createContentDeltaEvents(trailingText, streamState)) {
+        const converted = convertToOpenAI(ev, conversationId, model)
+        if (converted !== null) yield converted
       }
     }
 

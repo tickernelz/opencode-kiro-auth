@@ -90,4 +90,45 @@ describe('request history', () => {
     const emptyState = transform([{ role: 'user', content: '' }])
     expect(emptyState.currentMessage.userInputMessage?.content).toBe(SYNTHETIC_TURN_CONTENT)
   })
+
+  test('unwraps system-reminder transport tags in tool results', () => {
+    const state = transform([
+      { role: 'user', content: 'Read the instructions.' },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'tool-1', name: 'read', input: {} }]
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'tool-1',
+            content: [
+              {
+                type: 'text',
+                text: 'file output\n\n<system-reminder>\nPrivate instruction\n</system-reminder>'
+              }
+            ]
+          }
+        ]
+      }
+    ])
+
+    const toolResult =
+      state.currentMessage.userInputMessage?.userInputMessageContext?.toolResults?.[0]?.content?.[0]
+        ?.text
+    expect(toolResult).toBe('file output\n\nPrivate instruction')
+    expect(JSON.stringify(state)).not.toContain('system-reminder')
+  })
+
+  test('preserves system-reminder tags in ordinary user text', () => {
+    const state = transform([
+      { role: 'user', content: 'Explain `<system-reminder>literal</system-reminder>`.' }
+    ])
+
+    expect(state.currentMessage.userInputMessage?.content).toBe(
+      'Explain `<system-reminder>literal</system-reminder>`.'
+    )
+  })
 })

@@ -11,6 +11,7 @@ import {
   SYNTHETIC_TURN_CONTENT,
   findOriginalToolCall,
   getContentText,
+  getToolResultText,
   mergeAdjacentMessages
 } from '../infrastructure/transformers/message-transformer.js'
 import {
@@ -150,13 +151,13 @@ function buildCodeWhispererRequest(
       if (curMsg.tool_results) {
         for (const tr of curMsg.tool_results)
           curTrs.push({
-            content: [{ text: getContentText(tr) }],
+            content: [{ text: getToolResultText(tr) }],
             status: 'success',
             toolUseId: tr.tool_call_id
           })
       } else {
         curTrs.push({
-          content: [{ text: getContentText(curMsg) }],
+          content: [{ text: getToolResultText(curMsg) }],
           status: 'success',
           toolUseId: curMsg.tool_call_id
         })
@@ -167,7 +168,7 @@ function buildCodeWhispererRequest(
       for (const p of curMsg.content) {
         if (p.type === 'tool_result') {
           curTrs.push({
-            content: [{ text: getContentText(p.content || p) }],
+            content: [{ text: getToolResultText(p.content || p) }],
             status: 'success',
             toolUseId: p.tool_use_id
           })

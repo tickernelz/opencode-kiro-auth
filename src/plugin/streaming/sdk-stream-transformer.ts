@@ -3,6 +3,7 @@ import { getContextWindowSize } from '../models.js'
 import { estimateTokens } from '../response.js'
 import { convertToOpenAI } from './openai-converter.js'
 import { createStreamState, stopBlock } from './stream-state.js'
+import { SystemReminderFilter } from './system-reminder-filter.js'
 import { createContentDeltaEvents, flushContentDeltaEvents } from './thinking-parser.js'
 import { ToolCallState } from './types.js'
 
@@ -13,6 +14,7 @@ export async function* transformSdkStream(
   thinkingRequested = model.endsWith('-thinking')
 ): AsyncGenerator<any> {
   const streamState = createStreamState(thinkingRequested)
+  const systemReminderFilter = new SystemReminderFilter()
 
   let totalContent = ''
   let textOnlyContent = ''
@@ -30,7 +32,8 @@ export async function* transformSdkStream(
   try {
     for await (const event of eventStream) {
       if (event.assistantResponseEvent?.content) {
-        const text = event.assistantResponseEvent.content
+        const text = systemReminderFilter.push(event.assistantResponseEvent.content)
+        if (!text) continue
         totalContent += text
         textOnlyContent += text
 
@@ -68,6 +71,16 @@ export async function* transformSdkStream(
         if (cue.contextUsagePercentage) {
           contextUsagePercentage = cue.contextUsagePercentage
         }
+      }
+    }
+
+    const trailingText = systemReminderFilter.flush()
+    if (trailingText) {
+      totalContent += trailingText
+      textOnlyContent += trailingText
+      for (const ev of createContentDeltaEvents(trailingText, streamState)) {
+        const converted = convertToOpenAI(ev, conversationId, model)
+        if (converted !== null) yield converted
       }
     }
 
