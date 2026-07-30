@@ -4,6 +4,7 @@ import { extractRegionFromArn, normalizeRegion } from '../../constants'
 import { createDeterministicAccountId } from '../accounts'
 import * as logger from '../logger'
 import { kiroDb } from '../storage/sqlite'
+import type { KiroRegion } from '../types'
 import { fetchUsageLimits } from '../usage'
 import {
   findClientCredsRecursive,
@@ -18,6 +19,19 @@ import {
   STALE_CLI_ACCOUNT_REASON,
   type SyncedCliAccount
 } from './stale-accounts'
+
+export function deriveRegions(
+  dataRegion: unknown,
+  profileArn: string | undefined
+): { serviceRegion: KiroRegion; oidcRegion: KiroRegion } {
+  const hasDataRegion = typeof dataRegion === 'string' && dataRegion.trim() !== ''
+  const normalizedDataRegion = normalizeRegion(hasDataRegion ? (dataRegion as string) : undefined)
+  const serviceRegion = extractRegionFromArn(profileArn) || normalizedDataRegion
+  return {
+    serviceRegion,
+    oidcRegion: hasDataRegion ? normalizedDataRegion : serviceRegion
+  }
+}
 
 export async function syncFromKiroCli() {
   const dbPath = getCliDbPath()
@@ -54,10 +68,7 @@ export async function syncFromKiroCli() {
         const authMethod = isIdc ? 'idc' : 'desktop'
         let profileArn: string | undefined = data.profile_arn || data.profileArn
         if (!profileArn && isIdc) profileArn = activeProfileArn || readActiveProfileArnFromKiroCli()
-        // serviceRegion wins over data.region: kiro-cli stores data.region as the
-        // OIDC region (often us-east-1) regardless of where the account actually lives.
-        const serviceRegion = extractRegionFromArn(profileArn) || normalizeRegion(data.region)
-        const oidcRegion = serviceRegion
+        const { serviceRegion, oidcRegion } = deriveRegions(data.region, profileArn)
         const startUrl: string | undefined =
           typeof data.start_url === 'string'
             ? data.start_url
@@ -160,8 +171,13 @@ export async function syncFromKiroCli() {
 
         const id = createDeterministicAccountId(resolvedEmail, authMethod, clientId, profileArn)
         const existingById = all.find((a) => a.id === id)
+        const regionMismatch =
+          !!existingById &&
+          ((existingById.region || undefined) !== serviceRegion ||
+            (existingById.oidc_region || undefined) !== oidcRegion)
         if (
           existingById &&
+          !regionMismatch &&
           existingById.is_healthy === 1 &&
           existingById.expires_at >= cliExpiresAt &&
           existingById.expires_at > Date.now()

@@ -14,6 +14,20 @@ interface TokenRefresherConfig {
   account_selection_strategy: 'sticky' | 'round-robin' | 'lowest-usage'
 }
 
+// Observed endpoint responses:
+//   oidc.{region}.amazonaws.com/token, wrong region  -> 400 invalid_request /
+//                                        "Invalid token provided"
+//   oidc.{region}.amazonaws.com/token, spent token   -> 400 invalid_grant /
+//                                        "Invalid refresh token provided"
+function isWrongRegionError(error: any): boolean {
+  if (error instanceof KiroTokenRefreshError && error.code === 'invalid_request') {
+    return true
+  }
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  const lower = message.toLowerCase()
+  return lower.includes('invalid token provided') && !lower.includes('invalid refresh token')
+}
+
 export class TokenRefresher {
   constructor(
     private config: TokenRefresherConfig,
@@ -39,6 +53,18 @@ export class TokenRefresher {
       await this.repository.save(account)
       return { account, shouldContinue: false }
     } catch (e: any) {
+      if (isWrongRegionError(e)) {
+        logger.error(
+          'Token refresh failed: wrong OIDC region. The refresh token was likely issued at a ' +
+            'different region than the one used for this request, so retrying will not help — ' +
+            'the account needs its stored region corrected (re-sync from Kiro CLI, or reauth).',
+          {
+            email: account.email,
+            regionUsed: auth.oidcRegion || auth.region,
+            code: e instanceof KiroTokenRefreshError ? e.code : undefined
+          }
+        )
+      }
       return await this.handleRefreshError(e, account, showToast)
     }
   }
@@ -109,6 +135,7 @@ export class TokenRefresher {
         error.code === 'HTTP_403' ||
         error.message.includes('Invalid refresh token provided') ||
         error.message.includes('Invalid grant provided') ||
+        error.message.includes('Invalid token provided') ||
         error.message.includes('Client is expired'))
     ) {
       this.accountManager.markUnhealthy(account, error.code || error.message)
