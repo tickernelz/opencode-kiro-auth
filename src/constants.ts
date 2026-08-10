@@ -38,7 +38,12 @@ export function extractRegionFromArn(arn: string | undefined): KiroRegion | unde
 export const KIRO_CONSTANTS = {
   REFRESH_URL: 'https://prod.{{region}}.auth.desktop.kiro.dev/refreshToken',
   REFRESH_IDC_URL: 'https://oidc.{{region}}.amazonaws.com/token',
+  // Standard endpoint — works for all accounts (Builder ID + Pro)
   BASE_URL: 'https://q.{{region}}.amazonaws.com/generateAssistantResponse',
+  // Pro/runtime endpoint — Pro accounts with a profileArn use this; it serves
+  // additional models (glm-5, minimax, etc.) not available on the standard endpoint.
+  // Free Builder ID accounts (no profileArn) must NOT use this — it returns 400.
+  RUNTIME_URL: 'https://runtime.{{region}}.kiro.dev/generateAssistantResponse',
   USAGE_LIMITS_URL: 'https://q.{{region}}.amazonaws.com/getUsageLimits',
   DEFAULT_REGION: 'us-east-1' as KiroRegion,
   AXIOS_TIMEOUT: 120000,

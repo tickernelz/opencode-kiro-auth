@@ -72,7 +72,7 @@ export function warn(message: string, ...args: unknown[]): void {
 }
 
 export function debug(message: string, ...args: unknown[]): void {
-  if (process.env.DEBUG) {
+  if (process.env.DEBUG || process.env.OPENCODE_LOG_LEVEL === 'debug') {
     writeToFile('DEBUG', message, ...args)
   }
 }

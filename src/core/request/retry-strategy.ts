@@ -6,6 +6,8 @@ interface RetryConfig {
 interface RetryContext {
   iterations: number
   startTime: number
+  // Time spent in rate-limit waits, excluded from the request timeout budget.
+  excludedMs: number
 }
 
 export class RetryStrategy {
@@ -21,7 +23,8 @@ export class RetryStrategy {
       }
     }
 
-    if (Date.now() - context.startTime > this.config.request_timeout_ms) {
+    const elapsed = Date.now() - context.startTime - context.excludedMs
+    if (elapsed > this.config.request_timeout_ms) {
       return {
         canContinue: false,
         error: 'Request timeout'
@@ -31,10 +34,15 @@ export class RetryStrategy {
     return { canContinue: true }
   }
 
+  markSleep(context: RetryContext, ms: number): void {
+    context.excludedMs += Math.max(0, ms)
+  }
+
   createContext(): RetryContext {
     return {
       iterations: 0,
-      startTime: Date.now()
+      startTime: Date.now(),
+      excludedMs: 0
     }
   }
 }

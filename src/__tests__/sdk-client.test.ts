@@ -1,6 +1,6 @@
 import { GenerateAssistantResponseCommand } from '@aws/codewhisperer-streaming-client'
 import { describe, expect, test } from 'bun:test'
-import { clearSdkClientCache, createSdkClient } from '../plugin/sdk-client'
+import { clearSdkClientCache, createSdkClient, resolveKiroEndpoint } from '../plugin/sdk-client'
 import type { KiroAuthDetails } from '../plugin/types'
 
 function auth(): KiroAuthDetails {
@@ -113,5 +113,36 @@ describe('SDK client', () => {
     expect(maxAgain).toBe(max)
 
     clearSdkClientCache()
+  })
+})
+
+describe('resolveKiroEndpoint region consistency', () => {
+  test('Pro account: uses profileArn region even when auth.region (IDC/SSO home region) differs', () => {
+    // IAM Identity Center SSO portal region can differ from the region embedded
+    // in the CodeWhisperer profile ARN. The endpoint host must follow the
+    // profile ARN's region, not the SSO home region, or Kiro's backend rejects
+    // the request (host/signing-region mismatch looks like a spurious 400).
+    const a: KiroAuthDetails = {
+      ...auth(),
+      region: 'eu-west-1', // SSO/IDC home region
+      profileArn: 'arn:aws:codewhisperer:eu-central-1:123456789012:profile/ABCDEF'
+    }
+    expect(resolveKiroEndpoint(a)).toBe(
+      'https://runtime.eu-central-1.kiro.dev/generateAssistantResponse'
+    )
+  })
+
+  test('Builder ID account (no profileArn): falls back to auth.region', () => {
+    const a: KiroAuthDetails = { ...auth(), region: 'eu-central-1' }
+    expect(resolveKiroEndpoint(a)).toBe(
+      'https://q.eu-central-1.amazonaws.com/generateAssistantResponse'
+    )
+  })
+
+  test('missing region and profileArn falls back to us-east-1', () => {
+    const a: KiroAuthDetails = { ...auth(), region: undefined as any }
+    expect(resolveKiroEndpoint(a)).toBe(
+      'https://q.us-east-1.amazonaws.com/generateAssistantResponse'
+    )
   })
 })

@@ -102,7 +102,25 @@ export const KiroConfigSchema = z.object({
   // structured results. Requires a Pro account (profileArn); on free Builder ID
   // accounts the tool is not registered. Disable to avoid overlap with other
   // search tools/MCP servers.
-  web_search_enabled: z.boolean().default(true)
+  web_search_enabled: z.boolean().default(true),
+
+  // OpenCode strips image parts from conversation state across agentic turns.
+  // When true, the plugin caches converted images per conversation and re-attaches
+  // them to currentMessage on later turns so the model keeps "seeing" them.
+  // Kiro bills per session (request), not per token, so re-sending the same
+  // images each turn has no billing impact. Only disable if you hit the
+  // per-request 3.75MB image-payload cap on conversations with many heavy images.
+  image_carry_forward: z.boolean().default(true),
+
+  // Maximum conversation-state payload size (bytes) before the plugin trims the
+  // oldest history entries. Kiro's runtime endpoint rejects oversized payloads
+  // with CONTENT_LENGTH_EXCEEDS_THRESHOLD. The hard limit is structure-dependent
+  // (verified against the live API): a single message is accepted up to ~7.6MB,
+  // but conversations with many history entries are rejected as low as ~5.9MB.
+  // The 4MB default stays safely below the lowest observed failure regardless of
+  // structure, while allowing far more context than a conservative cap. Raising
+  // it risks 400s on long many-turn sessions; lowering it trims context sooner.
+  max_payload_bytes: z.number().min(100_000).max(5_500_000).default(4_000_000)
 })
 
 export type KiroConfig = z.infer<typeof KiroConfigSchema>
@@ -122,5 +140,7 @@ export const DEFAULT_CONFIG: KiroConfig = {
   auto_sync_kiro_cli: true,
   enable_log_api_request: false,
   auto_effort_mapping: true,
-  web_search_enabled: true
+  web_search_enabled: true,
+  image_carry_forward: true,
+  max_payload_bytes: 4_000_000
 }

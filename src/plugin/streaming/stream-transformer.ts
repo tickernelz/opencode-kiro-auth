@@ -46,7 +46,12 @@ export async function* transformKiroStream(
   try {
     while (true) {
       const { done, value } = await reader.read()
-      if (done) break
+      if (done) {
+        // Flush remaining multi-byte UTF-8 from TextDecoder
+        const tail = decoder.decode()
+        if (tail) rawBuffer += tail
+        break
+      }
 
       const chunk = decoder.decode(value, { stream: true })
       rawBuffer += chunk
@@ -166,11 +171,13 @@ export async function* transformKiroStream(
               currentToolCall = {
                 toolUseId: tc.toolUseId,
                 name: restoreToolName(tc.name, toolNameMap),
-                input: tc.input || ''
+                input: tc.input || '',
+                stopped: false
               }
             }
 
             if (tc.stop && currentToolCall) {
+              currentToolCall.stopped = true
               toolCalls.push(currentToolCall)
               currentToolCall = null
             }
@@ -225,13 +232,16 @@ export async function* transformKiroStream(
       if (_c !== null) yield _c
     }
 
-    const bracketToolCalls = parseBracketToolCalls(totalContent)
+    const bracketToolCalls = totalContent.includes('[Called ')
+      ? parseBracketToolCalls(totalContent)
+      : []
     if (bracketToolCalls.length > 0) {
       for (const btc of bracketToolCalls) {
         toolCalls.push({
           toolUseId: btc.toolUseId,
           name: restoreToolName(btc.name, toolNameMap),
-          input: typeof btc.input === 'string' ? btc.input : JSON.stringify(btc.input)
+          input: typeof btc.input === 'string' ? btc.input : JSON.stringify(btc.input),
+          stopped: true
         })
       }
     }

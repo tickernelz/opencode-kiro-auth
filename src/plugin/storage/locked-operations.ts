@@ -15,8 +15,16 @@ const LOCK_OPTIONS = {
   realpath: false
 }
 
+// In-process serialisation: prevents concurrent writes within the same process
+// from racing each other without paying the file-lock cost on every request.
+let inProcessLockChain: Promise<void> = Promise.resolve()
+
 export async function withDatabaseLock<T>(dbPath: string, fn: () => Promise<T>): Promise<T> {
-  const lockPath = `${dbPath}.lock`
+  // Serialise within this process first (cheap).
+  let resolveInProcess!: () => void
+  const prev = inProcessLockChain
+  inProcessLockChain = new Promise<void>((r) => (resolveInProcess = r))
+  await prev
 
   if (!existsSync(dbPath)) {
     const dir = dbPath.substring(0, dbPath.lastIndexOf('/'))
@@ -36,6 +44,7 @@ export async function withDatabaseLock<T>(dbPath: string, fn: () => Promise<T>):
         console.warn('Failed to release lock:', e)
       }
     }
+    resolveInProcess()
   }
 }
 

@@ -1,5 +1,9 @@
 import { parseBracketToolCalls } from '../../infrastructure/transformers/tool-call-parser.js'
-import { restoreToolName } from '../../infrastructure/transformers/tool-transformer.js'
+import {
+  deduplicateToolCallsByContent,
+  restoreToolName
+} from '../../infrastructure/transformers/tool-transformer.js'
+import * as logger from '../logger.js'
 import { getContextWindowSize } from '../models.js'
 import { estimateTokens } from '../response.js'
 import type { ToolNameMap } from '../types.js'
@@ -7,12 +11,6 @@ import { convertToOpenAI } from './openai-converter.js'
 import { findRealTag } from './stream-parser.js'
 import { createTextDeltaEvents, createThinkingDeltaEvents, stopBlock } from './stream-state.js'
 import { StreamState, THINKING_END_TAG, THINKING_START_TAG, ToolCallState } from './types.js'
-
-interface PendingToolCall {
-  toolUseId: string
-  name?: string
-  input: string
-}
 
 export async function* transformSdkStream(
   sdkResponse: any,
@@ -43,8 +41,11 @@ export async function* transformSdkStream(
   let outputTokens = 0
   let inputTokens = 0
   let contextUsagePercentage: number | null = null
-  const toolCallFragments = new Map<string, PendingToolCall>()
-  const toolCallOrder: string[] = []
+  let realInputTokens: number | undefined
+  let realOutputTokens: number | undefined
+  const toolCalls: ToolCallState[] = []
+  const activeToolCalls = new Map<string, ToolCallState>()
+  let lastToolUseId: string | null = null
 
   const eventStream = sdkResponse.generateAssistantResponseResponse
   if (!eventStream) {
@@ -161,40 +162,133 @@ export async function* transformSdkStream(
         }
       } else if (event.toolUseEvent) {
         const tc = event.toolUseEvent
+        // Only accumulate the tool *name* into totalContent — the input JSON is
+        // never bracket-format and can be hundreds of KB; including it causes
+        // catastrophic backtracking in parseBracketToolCalls.
         if (tc.name) totalContent += tc.name
-        if (tc.input) totalContent += tc.input
 
-        const toolUseId = tc.toolUseId
-        if (typeof toolUseId === 'string' && toolUseId.length > 0) {
-          let accumulated = toolCallFragments.get(toolUseId)
-          if (!accumulated) {
-            accumulated = { toolUseId, input: '' }
-            toolCallFragments.set(toolUseId, accumulated)
-            toolCallOrder.push(toolUseId)
+        if (tc.toolUseId) {
+          const existing = activeToolCalls.get(tc.toolUseId)
+          if (existing) {
+            existing.input += tc.input || ''
+            if (tc.input) {
+              const _c = convertToOpenAI(
+                {
+                  type: 'content_block_delta',
+                  index: existing.blockIndex,
+                  delta: { type: 'input_json_delta', partial_json: tc.input }
+                },
+                conversationId,
+                model
+              )
+              if (_c !== null) yield _c
+            }
+          } else if (tc.name) {
+            const blockIndex = streamState.nextBlockIndex++
+            const newToolCall: ToolCallState = {
+              toolUseId: tc.toolUseId,
+              name: restoreToolName(tc.name, toolNameMap),
+              input: tc.input || '',
+              stopped: false,
+              blockIndex
+            }
+            activeToolCalls.set(tc.toolUseId, newToolCall)
+            lastToolUseId = tc.toolUseId
+            {
+              const _c = convertToOpenAI(
+                {
+                  type: 'content_block_start',
+                  index: blockIndex,
+                  content_block: {
+                    type: 'tool_use',
+                    id: tc.toolUseId,
+                    name: newToolCall.name,
+                    input: {}
+                  }
+                },
+                conversationId,
+                model
+              )
+              if (_c !== null) yield _c
+            }
+            if (tc.input) {
+              const _c = convertToOpenAI(
+                {
+                  type: 'content_block_delta',
+                  index: blockIndex,
+                  delta: { type: 'input_json_delta', partial_json: tc.input }
+                },
+                conversationId,
+                model
+              )
+              if (_c !== null) yield _c
+            }
           }
-          if (typeof tc.name === 'string' && tc.name.length > 0) {
-            accumulated.name = restoreToolName(tc.name, toolNameMap)
-          }
-          if (tc.input !== undefined) {
-            accumulated.input +=
-              typeof tc.input === 'string' ? tc.input : (JSON.stringify(tc.input) ?? '')
+        }
+        if (tc.stop) {
+          const stopId: string | null = tc.toolUseId ?? lastToolUseId
+          const stoppingCall = stopId ? activeToolCalls.get(stopId) : null
+          if (stoppingCall) {
+            stoppingCall.stopped = true
+            toolCalls.push(stoppingCall)
+            activeToolCalls.delete(stopId as string)
+            if (lastToolUseId === stopId) {
+              let last: string | null = null
+              for (const k of activeToolCalls.keys()) last = k
+              lastToolUseId = last
+            }
           }
         }
       } else if (event.metadataEvent) {
         if (event.metadataEvent.contextUsagePercentage) {
           contextUsagePercentage = event.metadataEvent.contextUsagePercentage
         }
+        if (event.metadataEvent.tokenUsage) {
+          const tu = event.metadataEvent.tokenUsage
+          if (typeof tu.inputTokens === 'number') realInputTokens = tu.inputTokens
+          if (typeof tu.outputTokens === 'number') realOutputTokens = tu.outputTokens
+        }
       } else if ((event as any).contextUsageEvent) {
         const cue = (event as any).contextUsageEvent
         if (cue.contextUsagePercentage) {
           contextUsagePercentage = cue.contextUsagePercentage
         }
+      } else if ((event as any).meteringEvent) {
+        const me = (event as any).meteringEvent
+        logger.debug(
+          `[CREDITS] usage=${me.usage} ${me.unit || 'credit'}${me.usage !== 1 ? 's' : ''}`
+        )
       }
     }
 
-    const toolCalls = toolCallOrder
-      .map((toolUseId) => toolCallFragments.get(toolUseId))
-      .filter((toolCall): toolCall is ToolCallState => typeof toolCall?.name === 'string')
+    if (activeToolCalls.size > 0) {
+      // Kiro doesn't send a stop event for tool calls with no parameters
+      // (e.g. time_currentTime). Those are complete despite the missing stop —
+      // only calls that received partial input were actually cut off mid-stream.
+      const trulyTruncated: ToolCallState[] = []
+      for (const pending of activeToolCalls.values()) {
+        if (pending.input.length === 0) {
+          pending.stopped = true
+          toolCalls.push(pending)
+        } else {
+          trulyTruncated.push(pending)
+        }
+      }
+      activeToolCalls.clear()
+
+      for (const truncated of trulyTruncated) {
+        logger.debug(
+          `[STREAM] Truncated tool call: name=${truncated.name} id=${truncated.toolUseId} inputLen=${truncated.input.length}`
+        )
+        for (const ev of createTextDeltaEvents(
+          `\n\n[Kiro: "${truncated.name}" truncated mid-stream — 64K token output limit exceeded. Write in chunks of ≤500 lines.]`,
+          streamState
+        )) {
+          const _c = convertToOpenAI(ev, conversationId, model)
+          if (_c !== null) yield _c
+        }
+      }
+    }
 
     if (thinkingRequested && streamState.buffer) {
       if (streamState.inThinking) {
@@ -225,23 +319,32 @@ export async function* transformSdkStream(
       if (_c !== null) yield _c
     }
 
-    const bracketToolCalls = parseBracketToolCalls(totalContent)
+    const bracketToolCalls = totalContent.includes('[Called ')
+      ? parseBracketToolCalls(totalContent)
+      : []
     if (bracketToolCalls.length > 0) {
       for (const btc of bracketToolCalls) {
         toolCalls.push({
           toolUseId: btc.toolUseId,
           name: restoreToolName(btc.name, toolNameMap),
-          input: typeof btc.input === 'string' ? btc.input : JSON.stringify(btc.input)
+          input: typeof btc.input === 'string' ? btc.input : JSON.stringify(btc.input),
+          stopped: true
+          // no blockIndex — these are emitted post-stream below
         })
       }
     }
 
-    if (toolCalls.length > 0) {
-      const baseIndex = streamState.nextBlockIndex
-      for (let i = 0; i < toolCalls.length; i++) {
-        const tc = toolCalls[i]
+    const dedupedToolCalls = deduplicateToolCallsByContent(toolCalls)
+
+    // SDK tool calls were already emitted inline (content_block_start/delta/stop
+    // during streaming). Only bracket-format tool calls (blockIndex undefined)
+    // need to be emitted here.
+    const postStreamCalls = dedupedToolCalls.filter((tc) => tc.blockIndex === undefined)
+    if (postStreamCalls.length > 0) {
+      for (let i = 0; i < postStreamCalls.length; i++) {
+        const tc = postStreamCalls[i]
         if (!tc) continue
-        const blockIndex = baseIndex + i
+        const blockIndex = streamState.nextBlockIndex++
 
         {
           const _c = convertToOpenAI(
@@ -263,9 +366,8 @@ export async function* transformSdkStream(
 
         let inputJson: string
         try {
-          const parsed = JSON.parse(tc.input)
-          inputJson = JSON.stringify(parsed)
-        } catch (e) {
+          inputJson = JSON.stringify(JSON.parse(tc.input))
+        } catch {
           inputJson = tc.input
         }
 
@@ -274,10 +376,7 @@ export async function* transformSdkStream(
             {
               type: 'content_block_delta',
               index: blockIndex,
-              delta: {
-                type: 'input_json_delta',
-                partial_json: inputJson
-              }
+              delta: { type: 'input_json_delta', partial_json: inputJson }
             },
             conversationId,
             model
@@ -304,11 +403,15 @@ export async function* transformSdkStream(
       inputTokens = Math.max(0, totalTokens - outputTokens)
     }
 
+    // Real token counts from Kiro's metadata win over the context-% estimate.
+    if (realInputTokens !== undefined) inputTokens = realInputTokens
+    if (realOutputTokens !== undefined) outputTokens = realOutputTokens
+
     {
       const _c = convertToOpenAI(
         {
           type: 'message_delta',
-          delta: { stop_reason: toolCalls.length > 0 ? 'tool_use' : 'end_turn' },
+          delta: { stop_reason: dedupedToolCalls.length > 0 ? 'tool_use' : 'end_turn' },
           usage: {
             input_tokens: inputTokens,
             output_tokens: outputTokens,
@@ -327,6 +430,14 @@ export async function* transformSdkStream(
       if (_c !== null) yield _c
     }
   } catch (e) {
+    logger.debug(
+      `[STREAM] Error in transformSdkStream: ${e instanceof Error ? e.message : String(e)}`
+    )
+    for (const tc of activeToolCalls.values()) {
+      logger.debug(
+        `[STREAM] Incomplete tool call: name=${tc.name} id=${tc.toolUseId} inputLen=${tc.input.length}`
+      )
+    }
     throw e
   }
 }

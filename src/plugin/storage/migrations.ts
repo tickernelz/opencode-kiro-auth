@@ -9,6 +9,45 @@ export function runMigrations(db: Database): void {
   migrateStartUrlColumn(db)
   migrateOidcRegionColumn(db)
   migrateDropRefreshTokenUniqueIndex(db)
+  migrateConversationsTable(db)
+  migrateReauthLockTable(db)
+  migrateConversationsAgentContinuationId(db)
+}
+
+function migrateConversationsTable(db: Database): void {
+  const hasTable = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='conversations'")
+    .get()
+  if (hasTable) return
+
+  db.exec(`
+    CREATE TABLE conversations (
+      workspace   TEXT    NOT NULL,
+      fingerprint TEXT    NOT NULL,
+      conv_id     TEXT    NOT NULL,
+      last_used   INTEGER NOT NULL,
+      PRIMARY KEY (workspace, fingerprint)
+    )
+  `)
+  db.exec('CREATE INDEX idx_conversations_last_used ON conversations(last_used)')
+}
+
+function migrateReauthLockTable(db: Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS reauth_lock (
+      id      INTEGER PRIMARY KEY CHECK (id = 1),
+      pid     INTEGER NOT NULL,
+      acquired_at INTEGER NOT NULL
+    )
+  `)
+}
+
+function migrateConversationsAgentContinuationId(db: Database): void {
+  const columns = db.prepare('PRAGMA table_info(conversations)').all() as any[]
+  const names = new Set(columns.map((c: any) => c.name))
+  if (!names.has('agent_continuation_id')) {
+    db.exec('ALTER TABLE conversations ADD COLUMN agent_continuation_id TEXT')
+  }
 }
 
 function migrateToUniqueRefreshToken(db: Database): void {

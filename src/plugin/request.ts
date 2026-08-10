@@ -18,12 +18,18 @@ import {
   deduplicateToolResults
 } from '../infrastructure/transformers/tool-transformer.js'
 import { getEffectiveEffort } from './effort.js'
+import { imageCache } from './image-cache.js'
 import {
+  MAX_KIRO_IMAGES,
   convertImagesToKiroFormat,
   extractAllImages,
-  extractTextFromParts
+  extractTextFromParts,
+  type KiroImage
 } from './image-handler.js'
+import * as logger from './logger.js'
 import { resolveKiroModel } from './models.js'
+import { resolveKiroEndpoint } from './sdk-client.js'
+import { kiroDb } from './storage/sqlite.js'
 import type {
   CodeWhispererRequest,
   Effort,
@@ -33,16 +39,51 @@ import type {
   ToolNameMap
 } from './types'
 
+interface EffortConfig {
+  effort?: Effort
+  autoEffortMapping?: boolean
+}
+
+// Look up or mint a stable convId per (workspace, fingerprint) pair.
+// On a cache miss (new session or new prompt) we mint UUIDs; on a hit we
+// reuse the stored ones so continuations land in the same conversation.
+function deriveConversationIds(
+  workspace: string,
+  firstUserContent: string
+): { convId: string; agentContinuationId: string; fingerprint: string } {
+  const fingerprint = crypto
+    .createHash('sha256')
+    .update(workspace + '\0' + (firstUserContent || '_empty_'))
+    .digest('hex')
+    .slice(0, 32)
+
+  const existing = kiroDb.getConversationId(workspace, fingerprint)
+  if (existing) {
+    if (!existing.agentContinuationId) {
+      existing.agentContinuationId = crypto.randomUUID()
+      kiroDb.setConversationId(
+        workspace,
+        fingerprint,
+        existing.convId,
+        existing.agentContinuationId
+      )
+    }
+    return { ...existing, fingerprint }
+  }
+
+  const convId = crypto.randomUUID()
+  const agentContinuationId = crypto.randomUUID()
+  kiroDb.setConversationId(workspace, fingerprint, convId, agentContinuationId)
+  return { convId, agentContinuationId, fingerprint }
+}
+
 interface TransformResult {
   request: CodeWhispererRequest
   resolved: string
   convId: string
+  agentContinuationId: string
+  fingerprint: string
   toolNameMap: ToolNameMap
-}
-
-interface EffortConfig {
-  effort?: Effort
-  autoEffortMapping?: boolean
 }
 
 type ToastFunction = (message: string, variant: 'info' | 'warning' | 'success' | 'error') => void
@@ -53,13 +94,16 @@ function buildCodeWhispererRequest(
   auth: KiroAuthDetails,
   think = false,
   budget = 20000,
-  showToast?: ToastFunction
+  showToast?: ToastFunction,
+  workspace = '',
+  carryForward = true,
+  sessionId?: string,
+  maxPayloadBytes = 4_000_000
 ): TransformResult {
   const req = typeof body === 'string' ? JSON.parse(body) : body
   const { messages, tools, system } = req
-  const convId = crypto.randomUUID()
   if (!messages || messages.length === 0) throw new Error('No messages')
-  const resolved = resolveKiroModel(model)
+
   const systemMsgs = messages.filter((m: any) => m.role === 'system')
   const otherMsgs = messages.filter((m: any) => m.role !== 'system')
   let sys = system || ''
@@ -74,6 +118,24 @@ function buildCodeWhispererRequest(
   const msgs = mergeAdjacentMessages([...otherMsgs])
   const lastMsg = msgs[msgs.length - 1]
   if (lastMsg && lastMsg.role === 'assistant' && getContentText(lastMsg) === '{') msgs.pop()
+
+  const firstUserMsg = msgs.find((m: any) => m.role === 'user')
+  // Use text only — image bytes in the content array would change the
+  // fingerprint once OpenCode strips them on subsequent turns.
+  const firstUserContent = firstUserMsg
+    ? typeof firstUserMsg.content === 'string'
+      ? firstUserMsg.content
+      : extractTextFromParts(firstUserMsg.content)
+    : ''
+  const workspaceKey = sessionId ? `sess:${sessionId}` : workspace
+  // logger.debug() already gates on DEBUG/OPENCODE_LOG_LEVEL internally; no
+  // need to duplicate that check here since the log line itself is cheap.
+  logger.debug(`[CONV] ws=${workspaceKey} sessionId=${sessionId ?? 'none'} msgs=${msgs.length}`)
+  const { convId, agentContinuationId, fingerprint } = deriveConversationIds(
+    workspaceKey,
+    firstUserContent
+  )
+  const resolved = resolveKiroModel(model)
   const normalizedTools = Array.isArray(tools) ? tools : []
   const toolNameRegistry = createToolNameRegistry(normalizedTools)
   const cwTools = convertToolsToCodeWhisperer(normalizedTools, toolNameRegistry)
@@ -191,6 +253,8 @@ function buildCodeWhispererRequest(
   }
   const request: CodeWhispererRequest = {
     conversationState: {
+      agentContinuationId,
+      agentTaskType: 'vibe',
       chatTriggerType: KIRO_CONSTANTS.CHAT_TRIGGER_TYPE_MANUAL,
       conversationId: convId,
       currentMessage: {
@@ -292,7 +356,128 @@ function buildCodeWhispererRequest(
     }
   }
 
-  return { request, resolved, convId, toolNameMap: toolNameRegistry.toOriginalMap() }
+  // Strip empty toolUses arrays from history (Kiro quirk)
+  for (const h of history) {
+    if (h.assistantResponseMessage?.toolUses && h.assistantResponseMessage.toolUses.length === 0) {
+      delete h.assistantResponseMessage.toolUses
+    }
+  }
+
+  // Trim history if the payload approaches Kiro's request-size limit.
+  // Kiro rejects oversized payloads with CONTENT_LENGTH_EXCEEDS_THRESHOLD. The
+  // hard limit is structure-dependent (verified against the live API): a single
+  // message survives up to ~7.6MB, but many-entry histories are rejected as low
+  // as ~5.9MB. The configurable maxPayloadBytes (default 4MB) stays safely below
+  // the lowest observed failure regardless of history shape.
+  // Compute per-entry sizes once and shrink incrementally to avoid O(N²)
+  // re-stringifying the full request on every iteration.
+  const MAX_PAYLOAD_BYTES = maxPayloadBytes
+  const trimStartLen = history.length
+  let trimSizeBefore = 0
+  if (history.length > 2) {
+    const sizes = history.map((h) => JSON.stringify(h).length + 1)
+    const baseRequest: any = { ...request, conversationState: { ...request.conversationState } }
+    delete baseRequest.conversationState.history
+    let totalSize = JSON.stringify(baseRequest).length + 2 // for `"history":[]`
+    for (const s of sizes) totalSize += s
+    trimSizeBefore = totalSize
+
+    while (history.length > 2 && totalSize > MAX_PAYLOAD_BYTES) {
+      // Drop the two oldest entries (typically user + assistant pair).
+      totalSize -= (sizes.shift() || 0) + (sizes.shift() || 0)
+      history.splice(0, 2)
+
+      // Strip leading orphans: assistantResponseMessage can't start the history.
+      while (history.length > 0 && history[0]?.assistantResponseMessage) {
+        totalSize -= sizes.shift() || 0
+        history.shift()
+      }
+
+      // Strip leading toolResult-only userInputMessages whose toolUseIds are gone.
+      const toolUseIds = new Set<string>(
+        history.flatMap(
+          (h) => h.assistantResponseMessage?.toolUses?.map((tu: any) => tu.toolUseId) ?? []
+        )
+      )
+      while (history.length > 0) {
+        const trs = history[0]?.userInputMessage?.userInputMessageContext?.toolResults
+        if (!trs) break
+        const allMatched = trs.every((tr: any) => toolUseIds.has(tr.toolUseId))
+        if (allMatched) break
+        totalSize -= sizes.shift() || 0
+        history.shift()
+      }
+    }
+  }
+
+  if (trimStartLen !== history.length) {
+    logger.debug(
+      `[TRIM] history ${trimStartLen}→${history.length} entries, ~${Math.round(trimSizeBefore / 1024)}KB exceeded ${Math.round(MAX_PAYLOAD_BYTES / 1024)}KB cap`
+    )
+  }
+
+  // After trimming, drop any current-message toolResults whose tool_use was
+  // removed from history — sending a toolResult without a matching toolUse
+  // in the surviving history causes Bedrock 400 ValidationException.
+  if (uim?.userInputMessageContext?.toolResults) {
+    const survivingToolUseIds = new Set<string>(
+      history.flatMap(
+        (h) => h.assistantResponseMessage?.toolUses?.map((tu: any) => tu.toolUseId) ?? []
+      )
+    )
+    const filtered = uim.userInputMessageContext.toolResults.filter((tr: any) =>
+      survivingToolUseIds.has(tr.toolUseId)
+    )
+    if (filtered.length === 0) {
+      delete uim.userInputMessageContext.toolResults
+      if (Object.keys(uim.userInputMessageContext).length === 0) {
+        delete uim.userInputMessageContext
+      }
+    } else {
+      uim.userInputMessageContext.toolResults = filtered
+    }
+  }
+
+  // Image carry-forward: cache surviving images; on turns without fresh images,
+  // restore from cache — but never onto a tool-result turn (Kiro 400 on
+  // images+toolResults). Skip the history scan entirely if this conversation
+  // has never carried images — saves O(N) over 1000+ entry sessions.
+  if (carryForward && uim) {
+    const cmImgs = (uim.images as KiroImage[] | undefined) ?? []
+    const wireImages: KiroImage[] = cmImgs.length > 0 ? [...cmImgs] : []
+    if (
+      wireImages.length < MAX_KIRO_IMAGES &&
+      imageCache.hasEverHadImages(workspaceKey, fingerprint)
+    ) {
+      for (const h of history) {
+        const imgs = h.userInputMessage?.images as KiroImage[] | undefined
+        if (!imgs || imgs.length === 0) continue
+        wireImages.push(...imgs)
+        if (wireImages.length >= MAX_KIRO_IMAGES) break
+      }
+    }
+
+    if (wireImages.length > 0) {
+      imageCache.upsert(workspaceKey, fingerprint, wireImages)
+    } else {
+      const hasToolResults = (uim.userInputMessageContext?.toolResults?.length ?? 0) > 0
+      if (!hasToolResults) {
+        const cached = imageCache.get(workspaceKey, fingerprint)
+        if (cached && cached.length > 0) {
+          uim.images = cached.slice(0, MAX_KIRO_IMAGES)
+        }
+      }
+    }
+  }
+
+  return {
+    request,
+    resolved,
+    convId,
+    agentContinuationId,
+    fingerprint,
+    toolNameMap: toolNameRegistry.toOriginalMap()
+  }
 }
 
 export function transformToCodeWhisperer(
@@ -301,14 +486,21 @@ export function transformToCodeWhisperer(
   model: string,
   auth: KiroAuthDetails,
   think = false,
-  budget = 20000
+  budget = 20000,
+  workspace = '',
+  carryForward = true,
+  sessionId?: string
 ): PreparedRequest {
   const { request, resolved, convId, toolNameMap } = buildCodeWhispererRequest(
     body,
     model,
     auth,
     think,
-    budget
+    budget,
+    undefined,
+    workspace,
+    carryForward,
+    sessionId
   )
   const osP = os.platform(),
     osR = os.release(),
@@ -347,15 +539,23 @@ export function transformToSdkRequest(
   think = false,
   budget = 20000,
   showToast?: ToastFunction,
-  effortConfig?: EffortConfig
+  workspace = '',
+  carryForward = true,
+  sessionId?: string,
+  effortConfig?: EffortConfig,
+  maxPayloadBytes = 4_000_000
 ): SdkPreparedRequest {
-  const { request, resolved, convId, toolNameMap } = buildCodeWhispererRequest(
+  const { request, resolved, convId, fingerprint, toolNameMap } = buildCodeWhispererRequest(
     body,
     model,
     auth,
     think,
     budget,
-    showToast
+    showToast,
+    workspace,
+    carryForward,
+    sessionId,
+    maxPayloadBytes
   )
 
   // Resolve effort level based on config and model capabilities
@@ -367,13 +567,27 @@ export function transformToSdkRequest(
     effortConfig?.autoEffortMapping ?? true
   )
 
+  const region = extractRegionFromArn(auth.profileArn) ?? auth.region
+  // resolveKiroEndpoint returns the full URL including /generateAssistantResponse.
+  // Strip the path so the endpoint field holds only the base (what the SDK uses).
+  const endpointFull = resolveKiroEndpoint(auth)
+  const endpoint = endpointFull.replace(/\/generateAssistantResponse$/, '')
+  const workspaceKey = sessionId ? `sess:${sessionId}` : workspace
+  if (process.env.DEBUG || process.env.OPENCODE_LOG_LEVEL === 'debug') {
+    const finalBytes = JSON.stringify(request.conversationState).length
+    logger.debug(
+      `[PAYLOAD] convId=${convId} ~${Math.round(finalBytes / 1024)}KB history=${request.conversationState.history?.length ?? 0} entries`
+    )
+  }
   return {
     conversationState: request.conversationState,
     profileArn: request.profileArn,
     streaming: true,
     effectiveModel: resolved,
     conversationId: convId,
-    region: extractRegionFromArn(auth.profileArn) ?? auth.region,
+    conversationKey: { workspace: workspaceKey, fingerprint },
+    region,
+    endpoint,
     toolNameMap,
     effort
   }

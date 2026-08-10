@@ -60,6 +60,10 @@ function createHarness() {
   const accountManager: any = {
     getAccounts: () => [account],
     getAccountCount: () => 1,
+    markUnhealthy: (acc: any, reason: string) => {
+      acc.isHealthy = false
+      acc.unhealthyReason = reason
+    },
     toAuthDetails: (selected: any) => ({
       access: selected.accessToken,
       refresh: selected.refreshToken,

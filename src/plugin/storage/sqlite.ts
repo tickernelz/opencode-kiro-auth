@@ -245,8 +245,124 @@ export class KiroDatabase {
     }
   }
 
+  private static readonly REAUTH_LOCK_TTL_MS = 120_000
+
+  acquireReauthLock(): boolean {
+    const now = Date.now()
+    try {
+      this.db.exec('BEGIN IMMEDIATE')
+    } catch {
+      // Another write transaction is active — treat as lock held
+      return false
+    }
+    try {
+      const existing = this.db
+        .prepare('SELECT pid, acquired_at FROM reauth_lock WHERE id = 1')
+        .get() as { pid: number; acquired_at: number } | undefined
+
+      if (existing) {
+        const expired = now - existing.acquired_at >= KiroDatabase.REAUTH_LOCK_TTL_MS
+        const dead = (() => {
+          try {
+            process.kill(existing.pid, 0)
+            return false
+          } catch {
+            return true
+          }
+        })()
+        if (expired || dead) {
+          this.db.prepare('DELETE FROM reauth_lock WHERE id = 1').run()
+        } else {
+          this.db.exec('ROLLBACK')
+          return false
+        }
+      }
+
+      // INSERT OR REPLACE handles a race where two instances both saw the
+      // same dead/expired lock and both reach this branch.
+      this.db
+        .prepare('INSERT OR REPLACE INTO reauth_lock (id, pid, acquired_at) VALUES (1, ?, ?)')
+        .run(process.pid, now)
+      this.db.exec('COMMIT')
+      return true
+    } catch {
+      try {
+        this.db.exec('ROLLBACK')
+      } catch {
+        // already rolled back
+      }
+      return false
+    }
+  }
+
+  isReauthLockHeld(): boolean {
+    const row = this.db.prepare('SELECT pid FROM reauth_lock WHERE id = 1').get() as
+      { pid: number } | undefined
+    if (!row) return false
+    try {
+      process.kill(row.pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  releaseReauthLock(): void {
+    this.db.prepare('DELETE FROM reauth_lock WHERE id = 1 AND pid = ?').run(process.pid)
+  }
+
   close() {
     this.db.close()
+  }
+
+  getConversationId(
+    workspace: string,
+    fingerprint: string
+  ): { convId: string; agentContinuationId: string } | undefined {
+    const row = this.db
+      .prepare(
+        'SELECT conv_id, agent_continuation_id FROM conversations WHERE workspace = ? AND fingerprint = ?'
+      )
+      .get(workspace, fingerprint) as
+      { conv_id: string; agent_continuation_id: string | null } | undefined
+    return row
+      ? { convId: row.conv_id, agentContinuationId: row.agent_continuation_id || '' }
+      : undefined
+  }
+
+  deleteConversationId(workspace: string, fingerprint: string): void {
+    this.db
+      .prepare('DELETE FROM conversations WHERE workspace = ? AND fingerprint = ?')
+      .run(workspace, fingerprint)
+  }
+
+  /**
+   * Persist a conversationId and agentContinuationId, clean up entries older than ttlDays (default 7).
+   */
+  setConversationId(
+    workspace: string,
+    fingerprint: string,
+    convId: string,
+    agentContinuationId: string,
+    ttlDays = 7
+  ): void {
+    const now = Date.now()
+    const cutoff = now - ttlDays * 24 * 60 * 60 * 1000
+    this.db.exec('BEGIN TRANSACTION')
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO conversations (workspace, fingerprint, conv_id, agent_continuation_id, last_used)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(workspace, fingerprint) DO UPDATE SET conv_id = excluded.conv_id, agent_continuation_id = excluded.agent_continuation_id, last_used = excluded.last_used`
+        )
+        .run(workspace, fingerprint, convId, agentContinuationId, now)
+      this.db.prepare('DELETE FROM conversations WHERE last_used < ?').run(cutoff)
+      this.db.exec('COMMIT')
+    } catch (e) {
+      this.db.exec('ROLLBACK')
+      throw e
+    }
   }
 }
 

@@ -83,6 +83,8 @@ export interface CodeWhispererMessage {
 
 export interface CodeWhispererRequest {
   conversationState: {
+    agentContinuationId?: string
+    agentTaskType?: string
     chatTriggerType: string
     conversationId: string
     history?: CodeWhispererMessage[]
@@ -122,10 +124,14 @@ export interface SdkPreparedRequest {
   streaming: boolean
   effectiveModel: string
   conversationId: string
+  conversationKey: { workspace: string; fingerprint: string }
   region: string
   toolNameMap?: ToolNameMap
   /** Resolved effort level for thinking models */
   effort?: Effort
+  // Resolved endpoint base URL (q.amazonaws.com or runtime.kiro.dev).
+  // Set by transformToSdkRequest so callers and logs can show the real target.
+  endpoint: string
 }
 
 export type AccountSelectionStrategy = 'sticky' | 'round-robin' | 'lowest-usage'

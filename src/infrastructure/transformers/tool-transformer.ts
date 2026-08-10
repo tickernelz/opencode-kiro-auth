@@ -376,3 +376,19 @@ export function deduplicateToolResults(toolResults: any[]): any[] {
   }
   return unique
 }
+
+export function deduplicateToolCallsByContent(toolCalls: any[]): any[] {
+  const seen = new Set<string>()
+  const unique: any[] = []
+  for (const tc of toolCalls) {
+    // \x00 as separator (can't appear in a tool name)
+    const name = tc.name || tc.function?.name || ''
+    const input = tc.input || tc.function?.arguments || ''
+    const key = `${name}\x00${typeof input === 'string' ? input : JSON.stringify(input)}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      unique.push(tc)
+    }
+  }
+  return unique
+}

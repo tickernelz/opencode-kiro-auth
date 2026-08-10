@@ -8,7 +8,14 @@ mock.module('../plugin/storage/sqlite.js', () => ({
     getAccounts: () => [],
     upsertAccount: () => Promise.resolve(),
     deleteAccount: () => Promise.resolve(),
-    batchUpsertAccounts: () => Promise.resolve()
+    batchUpsertAccounts: () => Promise.resolve(),
+    // mock.module() registers globally for the whole bun test run, not just
+    // this file, so this stub must cover every kiroDb method any other test
+    // file's code path might hit — otherwise a different test file silently
+    // fails depending on run order (see #tool-compatibility.test.ts).
+    getConversationId: () => undefined,
+    setConversationId: () => {},
+    deleteConversationId: () => {}
   }
 }))
 mock.module('../plugin/sync/kiro-cli.js', () => ({

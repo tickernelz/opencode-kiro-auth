@@ -10,7 +10,10 @@ import {
   type KiroConfig
 } from './schema'
 
-function getConfigDir(): string {
+// Exported so other modules that need a subdirectory under the same base
+// (logs, image cache, etc.) resolve to the same platform-specific root
+// instead of re-implementing this lookup.
+export function getConfigDir(): string {
   const platform = process.platform
   if (platform === 'win32') {
     return join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), 'opencode')
