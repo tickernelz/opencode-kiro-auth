@@ -11,9 +11,9 @@ function streamOf(events: any[]) {
   }
 }
 
-async function collect(events: any[]) {
+async function collect(events: any[], model = MODEL) {
   const chunks: any[] = []
-  for await (const chunk of transformSdkStream(streamOf(events), MODEL, 'conversation-1')) {
+  for await (const chunk of transformSdkStream(streamOf(events), model, 'conversation-1')) {
     chunks.push(chunk)
   }
 
@@ -90,6 +90,24 @@ describe('native reasoning stream', () => {
 
     expect(reasoning).toBe(Array.from({ length: 17 }, (_, i) => `step${i} `).join(''))
     expect(text).toBe('Final answer.')
+  })
+
+  test('uses GPT-5.6 272K context size for streamed usage accounting', async () => {
+    const chunks: any[] = []
+    for await (const chunk of transformSdkStream(
+      streamOf([
+        { assistantResponseEvent: { content: 'Answer.' } },
+        { contextUsageEvent: { contextUsagePercentage: 10 } }
+      ]),
+      'gpt-5.6-sol',
+      'conversation-1'
+    )) {
+      chunks.push(chunk)
+    }
+
+    const usage = chunks.find((chunk) => chunk.usage)?.usage
+    expect(usage).toBeDefined()
+    expect(usage.prompt_tokens + usage.completion_tokens).toBe(27200)
   })
 
   test('ignores event types the transformer does not consume', async () => {

@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import {
   budgetToEffort,
   getEffectiveEffort,
+  getEffortSchemaPath,
+  getSupportedEffortLevels,
   resolveEffort,
   supportsEffort,
   supportsXHighEffort
@@ -17,6 +19,9 @@ describe('effort module', () => {
       expect(supportsEffort('claude-sonnet-5')).toBe(true)
       expect(supportsEffort('claude-sonnet-5-1m')).toBe(true)
       expect(supportsEffort('claude-opus-5')).toBe(true)
+      expect(supportsEffort('gpt-5.6-sol')).toBe(true)
+      expect(supportsEffort('gpt-5.6-terra')).toBe(true)
+      expect(supportsEffort('gpt-5.6-luna')).toBe(true)
     })
 
     test('returns false for unsupported models', () => {
@@ -87,6 +92,20 @@ describe('effort module', () => {
     test('clamps the xhigh band to max for non-xhigh models', () => {
       expect(budgetToEffort(98304, 'claude-sonnet-4.6')).toBe('max')
       expect(budgetToEffort(98304, 'claude-opus-4.6')).toBe('max')
+    })
+  })
+
+  describe('GPT reasoning contract', () => {
+    test('uses the reasoning schema path and low-through-xhigh levels', () => {
+      expect(getEffortSchemaPath('gpt-5.6-sol')).toBe('reasoning')
+      expect(getEffortSchemaPath('claude-opus-5')).toBe('output_config')
+      expect(getSupportedEffortLevels('gpt-5.6-sol')).toEqual(['low', 'medium', 'high', 'xhigh'])
+    })
+
+    test('clamps the plugin-wide max setting to GPT xhigh', () => {
+      expect(resolveEffort('gpt-5.6-sol', 'max')).toBe('xhigh')
+      expect(budgetToEffort(128000, 'gpt-5.6-sol')).toBe('xhigh')
+      expect(getEffectiveEffort('gpt-5.6-sol', true, 98304)).toBe('xhigh')
     })
   })
 
