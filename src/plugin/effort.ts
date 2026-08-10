@@ -1,18 +1,14 @@
 import type { Effort } from './config/schema'
 
-/**
- * Effort levels ordered from lowest to highest reasoning depth.
- */
+export type EffortSchemaPath = 'output_config' | 'reasoning'
+
+/** Effort levels ordered from lowest to highest reasoning depth. */
 export const EFFORT_LEVELS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 
 /**
- * Reference thinking budget for each effort level.
- *
- * Scaled to Kiro's real thinking range (1024–128000 on opus-4.8/opus-5) rather
- * than OpenCode's conventional 32768 cap, so every effort level is reachable
- * from a budget alone. These double as the upper bound of each mapping band in
- * budgetToEffort, and as the variant budgets the plugin advertises, so the two
- * cannot drift apart.
+ * Reference thinking budget for each effort level. The values also define the
+ * inclusive bands used by budgetToEffort, keeping advertised variants and wire
+ * effort values in sync.
  */
 export const THINKING_BUDGETS: Readonly<Record<Effort, number>> = {
   low: 16384,
@@ -22,22 +18,20 @@ export const THINKING_BUDGETS: Readonly<Record<Effort, number>> = {
   max: 128000
 }
 
-/**
- * Models that support the 5-value effort enum (including xhigh).
- * Per Kiro's effort docs, this is opus-4.7/4.8/5 and sonnet-5.
- */
+/** GPT-5.6 uses `reasoning.effort` and supports low through xhigh, but not max. */
+const GPT_REASONING_MODELS = new Set(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])
+
+/** Models whose advertised effort enum includes xhigh. */
 const XHIGH_CAPABLE_MODELS = new Set([
   'claude-opus-4.7',
   'claude-opus-4.8',
   'claude-opus-5',
   'claude-sonnet-5',
-  'claude-sonnet-5-1m'
+  'claude-sonnet-5-1m',
+  ...GPT_REASONING_MODELS
 ])
 
-/**
- * Models that support the 4-value effort enum (no xhigh).
- * xhigh requests on these models are clamped to max.
- */
+/** Models that accept an effort parameter through either supported schema path. */
 const EFFORT_CAPABLE_MODELS = new Set([
   'claude-opus-4.5',
   'claude-opus-4.6',
@@ -49,64 +43,55 @@ const EFFORT_CAPABLE_MODELS = new Set([
   ...XHIGH_CAPABLE_MODELS
 ])
 
-/**
- * Check if a model supports the effort parameter.
- */
 export function supportsEffort(kiroModel: string): boolean {
   return EFFORT_CAPABLE_MODELS.has(kiroModel)
 }
 
-/**
- * Check if a model supports xhigh effort level.
- */
 export function supportsXHighEffort(kiroModel: string): boolean {
   return XHIGH_CAPABLE_MODELS.has(kiroModel)
 }
 
-/**
- * Resolve effort level for a given model.
- * - Returns undefined if model doesn't support effort
- * - Clamps xhigh to max for models that don't support it
- */
-export function resolveEffort(kiroModel: string, requested: Effort): Effort | undefined {
-  if (!supportsEffort(kiroModel)) {
-    return undefined
-  }
+export function usesReasoningEffortSchema(kiroModel: string): boolean {
+  return GPT_REASONING_MODELS.has(kiroModel)
+}
 
-  // xhigh is only supported on the models in XHIGH_CAPABLE_MODELS
-  if (requested === 'xhigh' && !supportsXHighEffort(kiroModel)) {
-    return 'max'
-  }
+/** Match Kiro CLI's schema-driven additionalModelRequestFields selection. */
+export function getEffortSchemaPath(kiroModel: string): EffortSchemaPath | undefined {
+  if (!supportsEffort(kiroModel)) return undefined
+  return usesReasoningEffortSchema(kiroModel) ? 'reasoning' : 'output_config'
+}
 
-  return requested
+/** Return only effort levels that the selected model advertises. */
+export function getSupportedEffortLevels(kiroModel: string): readonly Effort[] {
+  if (!supportsEffort(kiroModel)) return []
+  if (usesReasoningEffortSchema(kiroModel)) return EFFORT_LEVELS.filter((level) => level !== 'max')
+  if (!supportsXHighEffort(kiroModel)) return EFFORT_LEVELS.filter((level) => level !== 'xhigh')
+  return EFFORT_LEVELS
 }
 
 /**
- * Map OpenCode thinking budget to Kiro effort level.
- *
- * Budget bands are scaled to Kiro's real thinking ceiling (1024–128000 for
- * opus-4.8/opus-5), not OpenCode's conventional 32768 cap, so the full effort
- * enum is reachable. Reference budgets:
- * - low:    16384
- * - medium: 32768
- * - high:   65536
- * - xhigh:  98304
- * - max:    128000
- *
- * Each THINKING_BUDGETS value is the inclusive upper bound of its band, so a
- * variant configured with a reference budget maps back to the same level:
- * - ≤16384  → low
- * - ≤32768  → medium
- * - ≤65536  → high
- * - ≤98304  → xhigh (clamped to max on models without xhigh support)
- * - >98304  → max
+ * Resolve an effort level against model-specific capabilities.
+ * GPT maps the plugin's global `max` setting to its highest valid value,
+ * `xhigh`; Claude models without xhigh clamp xhigh to max.
  */
-export function budgetToEffort(budget: number, kiroModel: string): Effort | undefined {
-  if (!supportsEffort(kiroModel)) {
-    return undefined
-  }
+export function resolveEffort(kiroModel: string, requested: Effort): Effort | undefined {
+  if (!supportsEffort(kiroModel)) return undefined
+  if (usesReasoningEffortSchema(kiroModel) && requested === 'max') return 'xhigh'
+  if (requested === 'xhigh' && !supportsXHighEffort(kiroModel)) return 'max'
+  return requested
+}
 
-  // EFFORT_LEVELS is ordered low→max, so the first band the budget fits wins.
+export function buildEffortRequestFields(
+  effort: Effort,
+  schemaPath: EffortSchemaPath
+): Record<string, { effort: Effort }> {
+  return schemaPath === 'reasoning' ? { reasoning: { effort } } : { output_config: { effort } }
+}
+
+/** Map an OpenCode thinking budget to a valid Kiro effort level. */
+export function budgetToEffort(budget: number, kiroModel: string): Effort | undefined {
+  if (!supportsEffort(kiroModel)) return undefined
+
   const effort =
     EFFORT_LEVELS.find((level) => budget <= THINKING_BUDGETS[level]) ??
     EFFORT_LEVELS[EFFORT_LEVELS.length - 1]!
@@ -115,13 +100,8 @@ export function budgetToEffort(budget: number, kiroModel: string): Effort | unde
 }
 
 /**
- * Get the effective effort level based on config, budget, and model.
- *
- * Priority:
- * 1. Explicit effort config (if set) - always applied regardless of thinking state
- * 2. Budget-to-effort mapping (if auto_effort_mapping enabled and thinking)
- * 3. 'medium' default (if thinking enabled)
- * 4. undefined (if not thinking)
+ * Resolve effort by priority: explicit config, mapped thinking budget, medium
+ * fallback, or no field when reasoning is not enabled.
  */
 export function getEffectiveEffort(
   kiroModel: string,
@@ -130,25 +110,9 @@ export function getEffectiveEffort(
   configEffort?: Effort,
   autoEffortMapping = true
 ): Effort | undefined {
-  if (!supportsEffort(kiroModel)) {
-    return undefined
-  }
-
-  // Explicit config takes precedence - always applied even without thinking
-  if (configEffort) {
-    return resolveEffort(kiroModel, configEffort)
-  }
-
-  // If not thinking, no effort needed
-  if (!thinking) {
-    return undefined
-  }
-
-  // Auto-map budget to effort
-  if (autoEffortMapping) {
-    return budgetToEffort(budget, kiroModel)
-  }
-
-  // Default to medium when thinking without auto-mapping
+  if (!supportsEffort(kiroModel)) return undefined
+  if (configEffort) return resolveEffort(kiroModel, configEffort)
+  if (!thinking) return undefined
+  if (autoEffortMapping) return budgetToEffort(budget, kiroModel)
   return 'medium'
 }

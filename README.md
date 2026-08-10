@@ -4,7 +4,7 @@
 [![npm downloads](https://img.shields.io/npm/dm/@zhafron/opencode-kiro-auth)](https://www.npmjs.com/package/@zhafron/opencode-kiro-auth)
 [![license](https://img.shields.io/npm/l/@zhafron/opencode-kiro-auth)](https://www.npmjs.com/package/@zhafron/opencode-kiro-auth)
 
-OpenCode plugin for AWS Kiro (CodeWhisperer) providing access to Claude Sonnet and Haiku
+OpenCode plugin for AWS Kiro (CodeWhisperer) providing access to Claude and GPT-5.6
 models with substantial trial quotas.
 
 ## Features
@@ -23,7 +23,7 @@ models with substantial trial quotas.
   block, with the reasoning flags declared on every thinking model, so it renders
   without any model configuration.
 - **Kiro Effort Mapping**: Maps OpenCode thinking budgets to Kiro's native effort
-  levels automatically, across the full `low`–`max` ladder.
+  levels automatically, using each model's supported effort ladder.
 - **Automated Recovery**: Exponential backoff for rate limits and automated token
   refresh.
 
@@ -92,9 +92,19 @@ reachable from a budget alone:
 get a five-variant ladder; the rest get four, and a budget in the `xhigh` band is
 clamped to `max`.
 
-Kiro's GPT-5.6 tiers are not advertised. They configure reasoning through
-`reasoning.effort` / `reasoning.mode` instead of `output_config.effort`, so they
-need a separate request path.
+Kiro's GPT-5.6 tiers are advertised directly under their base IDs as native reasoning
+models:
+
+| Model | Rate | Advertised context | Variants |
+| ----- | ---- | ------------------ | -------- |
+| `gpt-5.6-sol` | `2.4x` | `272K` | `low`, `medium`, `high`, `xhigh` |
+| `gpt-5.6-terra` | `1.0x` | `272K` | `low`, `medium`, `high`, `xhigh` |
+| `gpt-5.6-luna` | `0.1x` | `272K` | `low`, `medium`, `high`, `xhigh` |
+
+GPT requests send effort as `reasoning.effort`, while Claude requests retain
+`output_config.effort`. GPT does not accept the plugin's `max` level, so a global
+`max` override is clamped to `xhigh`. Unlike Claude, GPT does not use a separate
+`-thinking` companion or receive the legacy `<thinking_mode>` system-prompt tags.
 
 Use `~/.config/opencode/kiro.json` for plugin-wide behavior such as auth sync,
 account selection, retry limits, and `auto_effort_mapping`. A top-level `effort`

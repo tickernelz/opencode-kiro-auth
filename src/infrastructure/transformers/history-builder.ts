@@ -79,7 +79,11 @@ export function collapseAgenticLoops(history: CodeWhispererMessage[]): CodeWhisp
   return result
 }
 
-export function buildHistory(msgs: any[], resolved: string): CodeWhispererMessage[] {
+export function buildHistory(
+  msgs: any[],
+  resolved: string,
+  includeThinkingTags = true
+): CodeWhispererMessage[] {
   let history: CodeWhispererMessage[] = []
   for (let i = 0; i < msgs.length - 1; i++) {
     const m = msgs[i]
@@ -152,7 +156,7 @@ export function buildHistory(msgs: any[], resolved: string): CodeWhispererMessag
       if (Array.isArray(m.content)) {
         for (const p of m.content) {
           if (p.type === 'text') arm.content += p.text || ''
-          else if (p.type === 'thinking') th += p.thinking || p.text || ''
+          else if (p.type === 'thinking' && includeThinkingTags) th += p.thinking || p.text || ''
           else if (p.type === 'tool_use')
             tus.push({ input: p.input, name: p.name, toolUseId: p.id })
         }

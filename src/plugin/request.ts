@@ -17,7 +17,7 @@ import {
   createToolNameRegistry,
   deduplicateToolResults
 } from '../infrastructure/transformers/tool-transformer.js'
-import { getEffectiveEffort } from './effort.js'
+import { getEffectiveEffort, getEffortSchemaPath, usesReasoningEffortSchema } from './effort.js'
 import {
   convertImagesToKiroFormat,
   extractAllImages,
@@ -67,7 +67,7 @@ function buildCodeWhispererRequest(
     const extractedSystem = systemMsgs.map((m: any) => getContentText(m)).join('\n\n')
     sys = sys ? `${sys}\n\n${extractedSystem}` : extractedSystem
   }
-  if (think) {
+  if (think && !usesReasoningEffortSchema(resolved)) {
     const pfx = `<thinking_mode>enabled</thinking_mode><max_thinking_length>${budget}</max_thinking_length>`
     sys = sys.includes('<thinking_mode>') ? sys : sys ? `${pfx}\n${sys}` : pfx
   }
@@ -77,7 +77,7 @@ function buildCodeWhispererRequest(
   const normalizedTools = Array.isArray(tools) ? tools : []
   const toolNameRegistry = createToolNameRegistry(normalizedTools)
   const cwTools = convertToolsToCodeWhisperer(normalizedTools, toolNameRegistry)
-  let history = buildHistory(msgs, resolved)
+  let history = buildHistory(msgs, resolved, !usesReasoningEffortSchema(resolved))
 
   const curMsg = msgs[msgs.length - 1]
   if (!curMsg) throw new Error('Empty')
@@ -116,7 +116,8 @@ function buildCodeWhispererRequest(
     if (Array.isArray(curMsg.content)) {
       for (const p of curMsg.content) {
         if (p.type === 'text') arm.content += p.text || ''
-        else if (p.type === 'thinking') th += p.thinking || p.text || ''
+        else if (p.type === 'thinking' && !usesReasoningEffortSchema(resolved))
+          th += p.thinking || p.text || ''
         else if (p.type === 'tool_use') {
           if (!arm.toolUses) arm.toolUses = []
           arm.toolUses.push({ input: p.input, name: p.name, toolUseId: p.id })
@@ -367,6 +368,8 @@ export function transformToSdkRequest(
     effortConfig?.autoEffortMapping ?? true
   )
 
+  const effortSchemaPath = effort ? getEffortSchemaPath(resolved) : undefined
+
   return {
     conversationState: request.conversationState,
     profileArn: request.profileArn,
@@ -375,6 +378,7 @@ export function transformToSdkRequest(
     conversationId: convId,
     region: extractRegionFromArn(auth.profileArn) ?? auth.region,
     toolNameMap,
-    effort
+    effort,
+    effortSchemaPath
   }
 }

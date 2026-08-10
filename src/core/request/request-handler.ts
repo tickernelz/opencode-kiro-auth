@@ -2,6 +2,7 @@ import { GenerateAssistantResponseCommand } from '@aws/codewhisperer-streaming-c
 import type { AccountRepository } from '../../infrastructure/database/account-repository'
 import type { AccountManager } from '../../plugin/accounts'
 import type { KiroConfig } from '../../plugin/config'
+import { buildEffortRequestFields } from '../../plugin/effort'
 import { isPermanentError } from '../../plugin/health'
 import * as logger from '../../plugin/logger'
 import { transformToSdkRequest } from '../../plugin/request'
@@ -139,7 +140,12 @@ export class RequestHandler {
         this.logSdkRequest(sdkPrep, acc, apiTimestamp)
       }
       try {
-        const client = createSdkClient(auth, sdkPrep.region, sdkPrep.effort)
+        const client = createSdkClient(
+          auth,
+          sdkPrep.region,
+          sdkPrep.effort,
+          sdkPrep.effortSchemaPath
+        )
         const command = new GenerateAssistantResponseCommand({
           conversationState: sdkPrep.conversationState as any,
           profileArn: sdkPrep.profileArn
@@ -278,9 +284,10 @@ export class RequestHandler {
 
   private logSdkRequest(prep: SdkPreparedRequest, acc: ManagedAccount, timestamp: string): void {
     // Mirrors what the sdk-client middleware injects, so logs reflect the wire body.
-    const additionalModelRequestFields = prep.effort
-      ? { output_config: { effort: prep.effort } }
-      : undefined
+    const additionalModelRequestFields =
+      prep.effort && prep.effortSchemaPath
+        ? buildEffortRequestFields(prep.effort, prep.effortSchemaPath)
+        : undefined
 
     logger.logApiRequest(
       {

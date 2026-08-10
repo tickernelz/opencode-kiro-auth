@@ -1,5 +1,6 @@
 import { CodeWhispererStreamingClient } from '@aws/codewhisperer-streaming-client'
 import { KIRO_CONSTANTS } from '../constants.js'
+import { buildEffortRequestFields, type EffortSchemaPath } from './effort.js'
 import type { Effort, KiroAuthDetails } from './types'
 
 /**
@@ -10,6 +11,7 @@ interface ClientCacheEntry {
   client: CodeWhispererStreamingClient
   token: string
   effort?: Effort
+  effortSchemaPath?: EffortSchemaPath
 }
 
 const clientCache = new Map<string, ClientCacheEntry>()
@@ -18,12 +20,19 @@ const KIRO_CLI_MAX_ATTEMPTS = 3
 export function createSdkClient(
   auth: KiroAuthDetails,
   region: string,
-  effort?: Effort
+  effort?: Effort,
+  effortSchemaPath?: EffortSchemaPath
 ): CodeWhispererStreamingClient {
-  const cacheKey = `${region}:${auth.email || 'default'}:${effort || 'none'}`
+  const resolvedSchemaPath = effort ? (effortSchemaPath ?? 'output_config') : undefined
+  const cacheKey = `${region}:${auth.email || 'default'}:${effort || 'none'}:${resolvedSchemaPath || 'none'}`
   const cached = clientCache.get(cacheKey)
 
-  if (cached && cached.token === auth.access && cached.effort === effort) {
+  if (
+    cached &&
+    cached.token === auth.access &&
+    cached.effort === effort &&
+    cached.effortSchemaPath === resolvedSchemaPath
+  ) {
     return cached.client
   }
 
@@ -46,23 +55,18 @@ export function createSdkClient(
     { step: 'build', name: 'addKiroHeaders' }
   )
 
-  // Inject additionalModelRequestFields for effort-based thinking control
-  if (effort) {
+  // Inject additionalModelRequestFields using the model's advertised schema path.
+  if (effort && resolvedSchemaPath) {
     client.middlewareStack.add(
       (next: any) => async (args: any) => {
-        // The SDK serializes input to args.input, we need to modify the body
-        // before it's sent. The body is in args.request.body as a string.
         if (args.request?.body) {
           try {
             const body = JSON.parse(args.request.body)
-            body.additionalModelRequestFields = {
-              output_config: {
-                effort
-              }
-            }
+            body.additionalModelRequestFields = buildEffortRequestFields(effort, resolvedSchemaPath)
             args.request.body = JSON.stringify(body)
-          } catch {
-            // If body parsing fails, continue without modification
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error)
+            throw new Error(`Failed to inject Kiro effort configuration: ${detail}`)
           }
         }
         return next(args)
@@ -71,7 +75,12 @@ export function createSdkClient(
     )
   }
 
-  clientCache.set(cacheKey, { client, token, effort })
+  clientCache.set(cacheKey, {
+    client,
+    token,
+    effort,
+    effortSchemaPath: resolvedSchemaPath
+  })
   return client
 }
 

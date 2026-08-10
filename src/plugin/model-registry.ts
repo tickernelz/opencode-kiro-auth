@@ -1,4 +1,4 @@
-import { EFFORT_LEVELS, supportsEffort, supportsXHighEffort, THINKING_BUDGETS } from './effort.js'
+import { getSupportedEffortLevels, supportsEffort, THINKING_BUDGETS } from './effort.js'
 import { resolveKiroModel } from './models.js'
 
 type Modalities = {
@@ -21,19 +21,15 @@ interface ModelSpec {
   limit: { context: number; output: number }
   modalities: Modalities
   /**
-   * Emit a companion `-thinking` entry. Only set for Claude models that accept
-   * `output_config.effort`; the effort ladder is derived from the model's own
-   * capabilities in effort.ts.
+   * `companion` emits a `-thinking` model alongside the base entry. `native`
+   * marks the base model itself as reasoning-capable (used by GPT-5.6).
    */
-  thinking?: boolean
+  effort?: 'companion' | 'native'
 }
 
 /**
- * Models Kiro exposes, keyed by the OpenCode-facing model ID.
- *
- * Anthropic and open-weight models only. Kiro's GPT-5.6 tiers are deliberately
- * absent: they configure reasoning through `reasoning.effort` / `reasoning.mode`
- * rather than `output_config.effort`, so they need their own request path.
+ * Models Kiro exposes, keyed by the OpenCode-facing model ID. Claude reasoning
+ * uses `output_config.effort`; GPT-5.6 reasoning uses `reasoning.effort`.
  */
 const MODEL_SPECS: Record<string, ModelSpec> = {
   auto: { name: 'Auto', rate: '1.0x', limit: CONTEXT_200K, modalities: MULTIMODAL },
@@ -50,21 +46,21 @@ const MODEL_SPECS: Record<string, ModelSpec> = {
     rate: '1.3x',
     limit: CONTEXT_200K,
     modalities: MULTIMODAL,
-    thinking: true
+    effort: 'companion'
   },
   'claude-sonnet-4-6': {
     name: 'Claude Sonnet 4.6',
     rate: '1.3x',
     limit: CONTEXT_1M,
     modalities: MULTIMODAL,
-    thinking: true
+    effort: 'companion'
   },
   'claude-sonnet-5': {
     name: 'Claude Sonnet 5',
     rate: '1.3x',
     limit: CONTEXT_1M,
     modalities: MULTIMODAL,
-    thinking: true
+    effort: 'companion'
   },
 
   // Claude Haiku
@@ -81,35 +77,58 @@ const MODEL_SPECS: Record<string, ModelSpec> = {
     rate: '2.2x',
     limit: CONTEXT_200K,
     modalities: MULTIMODAL,
-    thinking: true
+    effort: 'companion'
   },
   'claude-opus-4-6': {
     name: 'Claude Opus 4.6',
     rate: '2.2x',
     limit: CONTEXT_1M,
     modalities: MULTIMODAL,
-    thinking: true
+    effort: 'companion'
   },
   'claude-opus-4-7': {
     name: 'Claude Opus 4.7',
     rate: '2.2x',
     limit: CONTEXT_1M,
     modalities: MULTIMODAL,
-    thinking: true
+    effort: 'companion'
   },
   'claude-opus-4-8': {
     name: 'Claude Opus 4.8',
     rate: '2.2x',
     limit: CONTEXT_1M,
     modalities: MULTIMODAL,
-    thinking: true
+    effort: 'companion'
   },
   'claude-opus-5': {
     name: 'Claude Opus 5',
     rate: '2.2x',
     limit: CONTEXT_1M,
     modalities: MULTIMODAL,
-    thinking: true
+    effort: 'companion'
+  },
+
+  // OpenAI GPT-5.6
+  'gpt-5.6-sol': {
+    name: 'GPT-5.6 Sol',
+    rate: '2.4x',
+    limit: { context: 272000, output: 64000 },
+    modalities: TEXT_ONLY,
+    effort: 'native'
+  },
+  'gpt-5.6-terra': {
+    name: 'GPT-5.6 Terra',
+    rate: '1.0x',
+    limit: { context: 272000, output: 64000 },
+    modalities: TEXT_ONLY,
+    effort: 'native'
+  },
+  'gpt-5.6-luna': {
+    name: 'GPT-5.6 Luna',
+    rate: '0.1x',
+    limit: { context: 272000, output: 64000 },
+    modalities: TEXT_ONLY,
+    effort: 'native'
   },
 
   // Open weight models
@@ -149,8 +168,7 @@ const MODEL_SPECS: Record<string, ModelSpec> = {
 function buildVariants(kiroModel: string): Record<string, unknown> {
   const variants: Record<string, unknown> = {}
 
-  for (const level of EFFORT_LEVELS) {
-    if (level === 'xhigh' && !supportsXHighEffort(kiroModel)) continue
+  for (const level of getSupportedEffortLevels(kiroModel)) {
     variants[level] = { thinkingConfig: { thinkingBudget: THINKING_BUDGETS[level] } }
   }
 
@@ -170,26 +188,39 @@ export function buildModelRegistry(): Record<string, unknown> {
   const models: Record<string, unknown> = {}
 
   for (const [modelID, spec] of Object.entries(MODEL_SPECS)) {
-    models[modelID] = {
+    const base: Record<string, unknown> = {
       name: `${spec.name} (${spec.rate})`,
       limit: spec.limit,
       modalities: spec.modalities
     }
 
-    if (!spec.thinking) continue
+    if (!spec.effort) {
+      models[modelID] = base
+      continue
+    }
 
-    // Effort capability is keyed on the resolved Kiro model ID, not the
-    // OpenCode-facing one (e.g. claude-opus-5 vs claude-opus-4-6).
     const kiroModel = resolveKiroModel(modelID)
-    if (!supportsEffort(kiroModel)) continue
+    if (!supportsEffort(kiroModel)) {
+      models[modelID] = base
+      continue
+    }
 
-    models[`${modelID}-thinking`] = {
-      name: `${spec.name} Thinking (${spec.rate})`,
-      limit: spec.limit,
-      modalities: spec.modalities,
+    const reasoning = {
       reasoning: true,
       interleaved: { field: 'reasoning_content' },
       variants: buildVariants(kiroModel)
+    }
+
+    if (spec.effort === 'native') {
+      models[modelID] = { ...base, ...reasoning }
+      continue
+    }
+
+    models[modelID] = base
+    models[`${modelID}-thinking`] = {
+      ...base,
+      name: `${spec.name} Thinking (${spec.rate})`,
+      ...reasoning
     }
   }
 

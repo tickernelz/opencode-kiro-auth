@@ -124,8 +124,10 @@ export interface SdkPreparedRequest {
   conversationId: string
   region: string
   toolNameMap?: ToolNameMap
-  /** Resolved effort level for thinking models */
+  /** Resolved effort level for thinking/reasoning models */
   effort?: Effort
+  /** Kiro additionalModelRequestFields object that accepts the effort value. */
+  effortSchemaPath?: 'output_config' | 'reasoning'
 }
 
 export type AccountSelectionStrategy = 'sticky' | 'round-robin' | 'lowest-usage'

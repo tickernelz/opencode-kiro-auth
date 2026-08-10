@@ -102,15 +102,68 @@ describe('SDK client', () => {
     clearSdkClientCache()
   })
 
-  test('does not reuse a cached client across different effort levels', () => {
+  test('injects GPT effort under reasoning before content-length is computed', async () => {
+    clearSdkClientCache()
+
+    const client = createSdkClient(auth(), 'us-east-1', 'high', 'reasoning')
+    const { body, request } = await captureRequest(client)
+
+    expect(body.additionalModelRequestFields.reasoning.effort).toBe('high')
+    expect(body.additionalModelRequestFields.output_config).toBeUndefined()
+    expect(Number(request.headers['content-length'])).toBe(Buffer.byteLength(request.bodyText))
+
+    clearSdkClientCache()
+  })
+
+  test('fails explicitly when effort injection cannot rewrite the SDK body', async () => {
+    clearSdkClientCache()
+
+    const client = createSdkClient(auth(), 'us-east-1', 'high', 'reasoning')
+    client.middlewareStack.addRelativeTo(
+      (next: any) => async (args: any) => {
+        args.request.body = '{invalid-json'
+        return next(args)
+      },
+      {
+        name: 'corruptBodyBeforeEffort',
+        relation: 'before',
+        toMiddleware: 'addEffortConfig'
+      }
+    )
+
+    const command = new GenerateAssistantResponseCommand({
+      conversationState: {
+        chatTriggerType: 'MANUAL',
+        conversationId: 'test-conversation',
+        currentMessage: {
+          userInputMessage: {
+            content: 'hello',
+            modelId: 'gpt-5.6-sol',
+            origin: 'AI_EDITOR'
+          }
+        }
+      }
+    })
+
+    await expect(client.send(command)).rejects.toThrow('Failed to inject Kiro effort configuration')
+
+    clearSdkClientCache()
+  })
+
+  test('does not reuse a cached client across different effort levels or schema paths', () => {
     clearSdkClientCache()
 
     const max = createSdkClient(auth(), 'us-east-1', 'max')
     const xhigh = createSdkClient(auth(), 'us-east-1', 'xhigh')
     const maxAgain = createSdkClient(auth(), 'us-east-1', 'max')
+    const outputConfig = createSdkClient(auth(), 'us-east-1', 'high', 'output_config')
+    const reasoning = createSdkClient(auth(), 'us-east-1', 'high', 'reasoning')
+    const reasoningAgain = createSdkClient(auth(), 'us-east-1', 'high', 'reasoning')
 
     expect(xhigh).not.toBe(max)
     expect(maxAgain).toBe(max)
+    expect(reasoning).not.toBe(outputConfig)
+    expect(reasoningAgain).toBe(reasoning)
 
     clearSdkClientCache()
   })

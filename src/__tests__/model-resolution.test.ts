@@ -9,6 +9,9 @@ describe('resolveKiroModel', () => {
     expect(resolveKiroModel('minimax-m2.5')).toBe('minimax-m2.5')
     expect(resolveKiroModel('minimax-m2.1')).toBe('minimax-m2.1')
     expect(resolveKiroModel('qwen3-coder-next')).toBe('qwen3-coder-next')
+    expect(resolveKiroModel('gpt-5.6-sol')).toBe('gpt-5.6-sol')
+    expect(resolveKiroModel('gpt-5.6-terra')).toBe('gpt-5.6-terra')
+    expect(resolveKiroModel('gpt-5.6-luna')).toBe('gpt-5.6-luna')
   })
 
   test('keeps existing supported Claude slugs intact', () => {
