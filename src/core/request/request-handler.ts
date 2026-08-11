@@ -4,6 +4,7 @@ import type { AccountManager } from '../../plugin/accounts'
 import type { KiroConfig } from '../../plugin/config'
 import { isPermanentError } from '../../plugin/health'
 import * as logger from '../../plugin/logger'
+import { refreshContextWindowSizes } from '../../plugin/models'
 import { transformToSdkRequest } from '../../plugin/request'
 import { createSdkClient } from '../../plugin/sdk-client'
 import { syncFromKiroCli } from '../../plugin/sync/kiro-cli'
@@ -132,6 +133,7 @@ export class RequestHandler {
         continue
       }
 
+      await refreshContextWindowSizes(auth)
       const sdkPrep = this.prepareSdkRequest(init?.body, model, auth, think, budget, showToast)
 
       const apiTimestamp = this.config.enable_log_api_request ? logger.getTimestamp() : null
