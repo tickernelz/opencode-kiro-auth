@@ -77,6 +77,7 @@ export async function refreshContextWindowSizes(auth: KiroAuthDetails): Promise<
     applyCatalog(cached.contextWindows)
     return
   }
+  activeContextWindows = new Map()
 
   const regions = [getCatalogRegion(auth)]
   if (!regions.includes('us-east-1')) regions.push('us-east-1')
