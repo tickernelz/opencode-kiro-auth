@@ -4,6 +4,7 @@ import { RegionSchema } from '../../plugin/config/schema.js'
 import * as logger from '../../plugin/logger.js'
 import { summarizeUsage } from '../../plugin/usage.js'
 import { UsageTracker } from '../account/usage-tracker.js'
+import { AccountMenuMethod } from './account-menu-method.js'
 import { IdcAuthMethod } from './idc-auth-method.js'
 import { TokenRefresher } from './token-refresher.js'
 
@@ -114,11 +115,22 @@ export class AuthHandler {
     }
 
     const idcMethod = new IdcAuthMethod(this.config, this.repository, this.accountManager)
+    const menuMethod = new AccountMenuMethod(
+      this.config,
+      this.repository,
+      this.accountManager,
+      idcMethod
+    )
 
     const configStartUrl = this.config.idc_start_url
     const configRegion = this.config.idc_region
 
     return [
+      {
+        label: 'Manage accounts (list · quotas · delete)',
+        type: 'oauth' as const,
+        authorize: (inputs?: any) => menuMethod.authorize(inputs)
+      },
       {
         label: 'AWS Builder ID / IAM Identity Center',
         type: 'oauth' as const,

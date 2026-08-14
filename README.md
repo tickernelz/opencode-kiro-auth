@@ -17,6 +17,9 @@ models with substantial trial quotas.
   size dynamically during retries.
 - **Intelligent Account Rotation**: Prioritizes multi-account usage based on lowest
   available quota.
+- **Interactive Account Manager**: An `opencode auth login` menu to list accounts with
+  live status/usage, add accounts, refresh quotas on demand, and delete individual
+  accounts or all of them.
 - **High-Performance Storage**: Efficient account and usage management using native Bun
   SQLite.
 - **Native Thinking Mode**: Streams Kiro's native reasoning to OpenCode's thinking
@@ -130,6 +133,23 @@ setting is a global override for all supported models, not a per-model setting.
    - You can also pre-configure defaults in `~/.config/opencode/kiro.json` via
      `idc_start_url` and `idc_region`.
 3. Configuration will be automatically managed at `~/.config/opencode/kiro.db`.
+
+### Managing accounts
+
+Run `opencode auth login`, select `kiro`, then choose **Manage accounts (list · quotas ·
+delete)** to open an interactive menu:
+
+- **Add account** — starts the AWS Builder ID device flow and adds the account to the
+  rotation pool. (For IAM Identity Center with a Start URL / profile ARN, use the
+  dedicated login methods listed below the menu instead.)
+- **Check quotas (refresh all)** — refreshes each account's token if needed and fetches
+  live usage, printing `used/limit (%)` per account.
+- **Per-account actions** — select an account to view its status/usage/region and delete
+  it.
+- **Delete all accounts** — clears every stored account (asks for confirmation).
+
+The menu requires an interactive terminal. In non-interactive contexts (SSH pipes, CI) it
+falls back to the plain add-account flow.
 
 ## Local plugin development
 
