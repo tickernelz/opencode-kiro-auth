@@ -105,10 +105,16 @@ export class ResponseHandler {
           finish_reason: p.stopReason === 'tool_use' ? 'tool_calls' : 'stop'
         }
       ],
+      // parseEventStream only surfaces `contextUsagePercentage` from the raw
+      // HTTP event stream — per-request cache read/write token counts are not
+      // available on this path. Only the SDK non-streaming path below can
+      // report them via MetadataEvent.tokenUsage.
       usage: {
         prompt_tokens: p.inputTokens || 0,
         completion_tokens: p.outputTokens || 0,
-        total_tokens: (p.inputTokens || 0) + (p.outputTokens || 0)
+        total_tokens: (p.inputTokens || 0) + (p.outputTokens || 0),
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0
       }
     }
 
@@ -140,6 +146,8 @@ export class ResponseHandler {
     const toolCallOrder: string[] = []
     let inputTokens = 0
     let outputTokens = 0
+    let cacheReadInputTokens = 0
+    let cacheWriteInputTokens = 0
 
     const eventStream = sdkResponse.generateAssistantResponseResponse
     if (eventStream) {
@@ -169,8 +177,15 @@ export class ResponseHandler {
           }
         }
         if (event.metadataEvent?.tokenUsage) {
-          inputTokens = event.metadataEvent.tokenUsage.inputTokens || 0
-          outputTokens = event.metadataEvent.tokenUsage.outputTokens || 0
+          const tu = event.metadataEvent.tokenUsage
+          inputTokens = tu.inputTokens || 0
+          outputTokens = tu.outputTokens || 0
+          if (typeof tu.cacheReadInputTokens === 'number') {
+            cacheReadInputTokens = tu.cacheReadInputTokens
+          }
+          if (typeof tu.cacheWriteInputTokens === 'number') {
+            cacheWriteInputTokens = tu.cacheWriteInputTokens
+          }
         }
       }
     }
@@ -197,7 +212,9 @@ export class ResponseHandler {
       usage: {
         prompt_tokens: inputTokens,
         completion_tokens: outputTokens,
-        total_tokens: inputTokens + outputTokens
+        total_tokens: inputTokens + outputTokens,
+        cache_creation_input_tokens: cacheWriteInputTokens,
+        cache_read_input_tokens: cacheReadInputTokens
       }
     }
 

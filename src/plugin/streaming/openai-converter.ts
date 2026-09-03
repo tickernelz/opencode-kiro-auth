@@ -64,7 +64,9 @@ export function convertToOpenAI(event: StreamEvent, id: string, model: string): 
     ;(base as any).usage = {
       prompt_tokens: event.usage?.input_tokens || 0,
       completion_tokens: event.usage?.output_tokens || 0,
-      total_tokens: (event.usage?.input_tokens || 0) + (event.usage?.output_tokens || 0)
+      total_tokens: (event.usage?.input_tokens || 0) + (event.usage?.output_tokens || 0),
+      cache_creation_input_tokens: event.usage?.cache_creation_input_tokens || 0,
+      cache_read_input_tokens: event.usage?.cache_read_input_tokens || 0
     }
   } else {
     // Skip Anthropic-specific events that @ai-sdk/openai-compatible doesn't understand
