@@ -43,6 +43,8 @@ export async function* transformSdkStream(
   let outputTokens = 0
   let inputTokens = 0
   let contextUsagePercentage: number | null = null
+  let cacheReadInputTokens = 0
+  let cacheWriteInputTokens = 0
   const toolCallFragments = new Map<string, PendingToolCall>()
   const toolCallOrder: string[] = []
 
@@ -184,6 +186,15 @@ export async function* transformSdkStream(
         if (event.metadataEvent.contextUsagePercentage) {
           contextUsagePercentage = event.metadataEvent.contextUsagePercentage
         }
+        const tu = event.metadataEvent.tokenUsage
+        if (tu) {
+          if (typeof tu.cacheReadInputTokens === 'number') {
+            cacheReadInputTokens = tu.cacheReadInputTokens
+          }
+          if (typeof tu.cacheWriteInputTokens === 'number') {
+            cacheWriteInputTokens = tu.cacheWriteInputTokens
+          }
+        }
       } else if ((event as any).contextUsageEvent) {
         const cue = (event as any).contextUsageEvent
         if (cue.contextUsagePercentage) {
@@ -312,8 +323,8 @@ export async function* transformSdkStream(
           usage: {
             input_tokens: inputTokens,
             output_tokens: outputTokens,
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0
+            cache_creation_input_tokens: cacheWriteInputTokens,
+            cache_read_input_tokens: cacheReadInputTokens
           }
         },
         conversationId,

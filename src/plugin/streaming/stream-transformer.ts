@@ -310,6 +310,10 @@ export async function* transformKiroStream(
         {
           type: 'message_delta',
           delta: { stop_reason: toolCalls.length > 0 ? 'tool_use' : 'end_turn' },
+          // The non-SDK (raw HTTP) event stream carries only
+          // `contextUsagePercentage` — no per-request token usage is exposed, so
+          // cache read/write totals remain 0 here. Only the SDK path can report
+          // them via MetadataEvent.tokenUsage.
           usage: {
             input_tokens: inputTokens,
             output_tokens: outputTokens,
