@@ -7,7 +7,7 @@ import {
 import { transformToSdkRequest } from '../plugin/request.js'
 import { transformSdkStream } from '../plugin/streaming/sdk-stream-transformer.js'
 
-const MODEL = 'claude-sonnet-4-5'
+const MODEL = 'claude-sonnet-4-6'
 const LONG_TOOL_NAME = `datadog_${'security_findings_'.repeat(4)}ticket_suggestions`
 
 const auth: any = {

@@ -40,17 +40,10 @@ const MODEL_SPECS: Record<string, ModelSpec> = {
 
   // Claude Sonnet
   'claude-sonnet-4': {
-    name: 'Claude Sonnet 4.0',
+    name: 'Claude Sonnet 4.0 [EOL]',
     rate: '1.3x',
     limit: CONTEXT_200K,
     modalities: MULTIMODAL
-  },
-  'claude-sonnet-4-5': {
-    name: 'Claude Sonnet 4.5',
-    rate: '1.3x',
-    limit: CONTEXT_200K,
-    modalities: MULTIMODAL,
-    thinking: true
   },
   'claude-sonnet-4-6': {
     name: 'Claude Sonnet 4.6',
@@ -61,6 +54,13 @@ const MODEL_SPECS: Record<string, ModelSpec> = {
   },
   'claude-sonnet-5': {
     name: 'Claude Sonnet 5',
+    rate: '1.3x',
+    limit: CONTEXT_1M,
+    modalities: MULTIMODAL,
+    thinking: true
+  },
+  'claude-sonnet-5-5': {
+    name: 'Claude Sonnet 5.5',
     rate: '1.3x',
     limit: CONTEXT_1M,
     modalities: MULTIMODAL,
@@ -110,6 +110,35 @@ const MODEL_SPECS: Record<string, ModelSpec> = {
     limit: CONTEXT_1M,
     modalities: MULTIMODAL,
     thinking: true
+  },
+  'claude-opus-5-5': {
+    name: 'Claude Opus 5.5',
+    rate: '2.0x',
+    limit: CONTEXT_1M,
+    modalities: MULTIMODAL,
+    thinking: true
+  },
+
+  // GPT-5.6 (no thinking companion: these configure reasoning via
+  // reasoning.effort/reasoning.mode, not output_config.effort, and need
+  // their own request path before a -thinking variant can be advertised)
+  'gpt-5.6-sol': {
+    name: 'GPT-5.6 Sol',
+    rate: '4.4x',
+    limit: CONTEXT_1M,
+    modalities: MULTIMODAL
+  },
+  'gpt-5.6-terra': {
+    name: 'GPT-5.6 Terra',
+    rate: '2.2x',
+    limit: CONTEXT_1M,
+    modalities: MULTIMODAL
+  },
+  'gpt-5.6-luna': {
+    name: 'GPT-5.6 Luna',
+    rate: '0.6x',
+    limit: CONTEXT_1M,
+    modalities: MULTIMODAL
   },
 
   // Open weight models

@@ -12,7 +12,6 @@ describe('resolveKiroModel', () => {
   })
 
   test('keeps existing supported Claude slugs intact', () => {
-    expect(resolveKiroModel('claude-sonnet-4-5')).toBe('claude-sonnet-4.5')
     expect(resolveKiroModel('claude-sonnet-4')).toBe('claude-sonnet-4')
     expect(resolveKiroModel('claude-opus-4-8')).toBe('claude-opus-4.8')
     expect(resolveKiroModel('claude-opus-4-8-thinking')).toBe('claude-opus-4.8')
@@ -21,8 +20,30 @@ describe('resolveKiroModel', () => {
   test('resolves claude-sonnet-5 slugs', () => {
     expect(resolveKiroModel('claude-sonnet-5')).toBe('claude-sonnet-5')
     expect(resolveKiroModel('claude-sonnet-5-thinking')).toBe('claude-sonnet-5')
-    expect(resolveKiroModel('claude-sonnet-5-1m')).toBe('claude-sonnet-5-1m')
-    expect(resolveKiroModel('claude-sonnet-5-1m-thinking')).toBe('claude-sonnet-5-1m')
+  })
+
+  test('resolves claude-5.5 preview slugs', () => {
+    expect(resolveKiroModel('claude-opus-5-5')).toBe('claude-opus-5.5')
+    expect(resolveKiroModel('claude-opus-5-5-thinking')).toBe('claude-opus-5.5')
+    expect(resolveKiroModel('claude-sonnet-5-5')).toBe('claude-sonnet-5.5')
+    expect(resolveKiroModel('claude-sonnet-5-5-thinking')).toBe('claude-sonnet-5.5')
+  })
+
+  test('resolves gpt-5.6 slugs', () => {
+    expect(resolveKiroModel('gpt-5.6-sol')).toBe('gpt-5.6-sol')
+    expect(resolveKiroModel('gpt-5.6-terra')).toBe('gpt-5.6-terra')
+    expect(resolveKiroModel('gpt-5.6-luna')).toBe('gpt-5.6-luna')
+  })
+
+  test('rejects removed claude-sonnet-4-5 slug', () => {
+    expect(() => resolveKiroModel('claude-sonnet-4-5')).toThrow(
+      'Unsupported model: claude-sonnet-4-5'
+    )
+  })
+
+  test('rejects removed -1m slugs', () => {
+    expect(() => resolveKiroModel('claude-sonnet-5-1m')).toThrow()
+    expect(() => resolveKiroModel('claude-opus-4-6-1m')).toThrow()
   })
 
   test('rejects removed qwen3-coder-480b slug', () => {

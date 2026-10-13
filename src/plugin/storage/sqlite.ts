@@ -183,9 +183,12 @@ export class KiroDatabase {
               OR email LIKE 'placeholder-%@awsapps.local'
               OR (is_healthy = 0
                   AND unhealthy_reason IN ('Account Suspended', 'ExpiredTokenException')
-                  AND (recovery_time IS NULL OR recovery_time < ?))`
+                  AND (recovery_time IS NULL OR recovery_time < ?))
+              OR (is_healthy = 0
+                  AND unhealthy_reason LIKE '%Replaced by active Kiro CLI account%'
+                  AND expires_at < ?)`
         )
-        .run(cutoffMs)
+        .run(cutoffMs, Date.now())
       const after = (this.db.prepare('SELECT COUNT(*) AS n FROM accounts').get() as { n: number }).n
       return before - after
     })

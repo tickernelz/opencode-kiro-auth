@@ -50,36 +50,34 @@ export const KIRO_CONSTANTS = {
 }
 
 export const MODEL_MAPPING: Record<string, string> = {
+  // GPT (no thinking contract wired up yet; see model-registry.ts)
+  'gpt-5.6-sol': 'gpt-5.6-sol',
+  'gpt-5.6-terra': 'gpt-5.6-terra',
+  'gpt-5.6-luna': 'gpt-5.6-luna',
   // Claude Haiku
   'claude-haiku-4-5': 'claude-haiku-4.5',
   'claude-haiku-4-5-thinking': 'claude-haiku-4.5',
   // Claude Sonnet
   'claude-sonnet-4': 'claude-sonnet-4',
-  'claude-sonnet-4-5': 'claude-sonnet-4.5',
-  'claude-sonnet-4-5-thinking': 'claude-sonnet-4.5',
-  'claude-sonnet-4-5-1m': 'claude-sonnet-4.5-1m',
-  'claude-sonnet-4-5-1m-thinking': 'claude-sonnet-4.5-1m',
   'claude-sonnet-4-6': 'claude-sonnet-4.6',
   'claude-sonnet-4-6-thinking': 'claude-sonnet-4.6',
-  'claude-sonnet-4-6-1m': 'claude-sonnet-4.6-1m',
-  'claude-sonnet-4-6-1m-thinking': 'claude-sonnet-4.6-1m',
   'claude-sonnet-5': 'claude-sonnet-5',
   'claude-sonnet-5-thinking': 'claude-sonnet-5',
-  'claude-sonnet-5-1m': 'claude-sonnet-5-1m',
-  'claude-sonnet-5-1m-thinking': 'claude-sonnet-5-1m',
+  'claude-sonnet-5-5': 'claude-sonnet-5.5',
+  'claude-sonnet-5-5-thinking': 'claude-sonnet-5.5',
   // Claude Opus
   'claude-opus-4-5': 'claude-opus-4.5',
   'claude-opus-4-5-thinking': 'claude-opus-4.5',
   'claude-opus-4-6': 'claude-opus-4.6',
   'claude-opus-4-6-thinking': 'claude-opus-4.6',
-  'claude-opus-4-6-1m': 'claude-opus-4.6-1m',
-  'claude-opus-4-6-1m-thinking': 'claude-opus-4.6-1m',
   'claude-opus-4-7': 'claude-opus-4.7',
   'claude-opus-4-7-thinking': 'claude-opus-4.7',
   'claude-opus-4-8': 'claude-opus-4.8',
   'claude-opus-4-8-thinking': 'claude-opus-4.8',
   'claude-opus-5': 'claude-opus-5',
   'claude-opus-5-thinking': 'claude-opus-5',
+  'claude-opus-5-5': 'claude-opus-5.5',
+  'claude-opus-5-5-thinking': 'claude-opus-5.5',
   // Auto
   auto: 'auto',
   // Open weight models
@@ -87,18 +85,31 @@ export const MODEL_MAPPING: Record<string, string> = {
   'glm-5': 'glm-5',
   'minimax-m2.5': 'minimax-m2.5',
   'minimax-m2.1': 'minimax-m2.1',
-  'qwen3-coder-next': 'qwen3-coder-next',
-  // Legacy / internal mappings kept for backwards compatibility
-  'claude-3-7-sonnet': 'CLAUDE_3_7_SONNET_20250219_V1_0',
-  'nova-swe': 'AGI_NOVA_SWE_V1_5',
-  'gpt-oss-120b': 'OPENAI_GPT_OSS_120B_1_0',
-  'minimax-m2': 'MINIMAX_MINIMAX_M2',
-  'kimi-k2-thinking': 'MOONSHOT_KIMI_K2_THINKING'
+  'qwen3-coder-next': 'qwen3-coder-next'
 }
 
 export const SUPPORTED_MODELS = Object.keys(MODEL_MAPPING)
 
-const LONG_CONTEXT_MODELS = new Set(Object.keys(MODEL_MAPPING).filter((k) => k.includes('-1m')))
+/**
+ * Models with a 1M token context window. Kiro no longer exposes separate
+ * `-1m` slugs; the Claude and GPT-5.6 tiers below carry 1M context natively.
+ * Everything else (auto, legacy sonnet-4, haiku, open-weight models) stays
+ * at the 200K default.
+ */
+const LONG_CONTEXT_MODELS = new Set([
+  'claude-opus-5-5',
+  'claude-sonnet-5-5',
+  'claude-opus-5',
+  'claude-sonnet-5',
+  'claude-opus-4-8',
+  'claude-opus-4-7',
+  'claude-opus-4-6',
+  'claude-sonnet-4-6',
+  'claude-opus-4-5',
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+  'gpt-5.6-luna'
+])
 
 export function isLongContextModel(model: string): boolean {
   return LONG_CONTEXT_MODELS.has(model)

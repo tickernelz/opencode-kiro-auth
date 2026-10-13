@@ -26,9 +26,40 @@ export class TokenRefresher {
     account: ManagedAccount,
     auth: KiroAuthDetails,
     showToast: ToastFunction
-  ): Promise<{ account: ManagedAccount; shouldContinue: boolean }> {
+  ): Promise<{ account: ManagedAccount; shouldContinue: boolean; tokenRecovered?: boolean }> {
     if (!accessTokenExpired(auth, this.config.token_expiry_buffer_ms)) {
       return { account, shouldContinue: false }
+    }
+
+    // Before attempting OIDC refresh (which will fail if the AWS SSO session
+    // expired overnight), check whether the Kiro CLI already has a fresh token
+    // (e.g. renewed by Kiro IDE running in the background). This avoids the
+    // unnecessary OIDC round-trip and the "Exceeded max iterations" error.
+    if (this.config.auto_sync_kiro_cli) {
+      try {
+        await this.syncFromKiroCli()
+        this.repository.invalidateCache()
+        const accounts = await this.repository.findAll()
+        const synced = accounts.find((a: ManagedAccount) => a.id === account.id)
+        if (
+          synced &&
+          !accessTokenExpired(
+            this.accountManager.toAuthDetails(synced),
+            this.config.token_expiry_buffer_ms
+          )
+        ) {
+          this.accountManager.updateFromAuth(account, this.accountManager.toAuthDetails(synced))
+          await this.repository.save(account)
+          showToast('Credentials recovered from Kiro CLI sync.', 'info')
+          logger.debug('refreshIfNeeded: token recovered from CLI sync before OIDC attempt')
+          // tokenRecovered=true tells the caller to reset the retry counter.
+          return { account, shouldContinue: true, tokenRecovered: true }
+        }
+      } catch (e) {
+        logger.debug(
+          `refreshIfNeeded: pre-sync failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`
+        )
+      }
     }
 
     try {
@@ -75,7 +106,7 @@ export class TokenRefresher {
     error: any,
     account: ManagedAccount,
     showToast: ToastFunction
-  ): Promise<{ account: ManagedAccount; shouldContinue: boolean }> {
+  ): Promise<{ account: ManagedAccount; shouldContinue: boolean; tokenRecovered?: boolean }> {
     logger.error('Token refresh failed', {
       email: account.email,
       code: error instanceof KiroTokenRefreshError ? error.code : undefined,
@@ -97,7 +128,9 @@ export class TokenRefresher {
       )
     ) {
       showToast('Credentials recovered from Kiro CLI sync.', 'info')
-      return { account: stillAcc, shouldContinue: true }
+      // tokenRecovered=true signals the caller not to count this as a retry
+      // iteration — the token is now valid and the request should proceed.
+      return { account: stillAcc, shouldContinue: true, tokenRecovered: true }
     }
 
     if (
@@ -107,6 +140,7 @@ export class TokenRefresher {
         error.code === 'ExpiredClientException' ||
         error.code === 'HTTP_401' ||
         error.code === 'HTTP_403' ||
+        error.code === 'invalid_client' ||
         error.message.includes('Invalid refresh token provided') ||
         error.message.includes('Invalid grant provided') ||
         error.message.includes('Client is expired'))

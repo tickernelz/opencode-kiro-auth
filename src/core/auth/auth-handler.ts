@@ -2,6 +2,7 @@ import type { AuthHook } from '@opencode-ai/plugin'
 import type { AccountRepository } from '../../infrastructure/database/account-repository.js'
 import { RegionSchema } from '../../plugin/config/schema.js'
 import * as logger from '../../plugin/logger.js'
+import { kiroDb } from '../../plugin/storage/sqlite.js'
 import { summarizeUsage } from '../../plugin/usage.js'
 import { UsageTracker } from '../account/usage-tracker.js'
 import { IdcAuthMethod } from './idc-auth-method.js'
@@ -20,6 +21,17 @@ export class AuthHandler {
 
   async initialize(showToast?: ToastFunction): Promise<void> {
     const { syncFromKiroCli } = await import('../../plugin/sync/kiro-cli.js')
+
+    // Clean up stale replaced-account rows before loading so multiple opencode
+    // instances don't accumulate hundreds of zombie rows in the DB.
+    try {
+      const removed = await kiroDb.cleanupTestAndStaleAccounts()
+      if (removed > 0) logger.log(`Auth init: swept ${removed} stale row(s) from DB`)
+    } catch (e) {
+      logger.debug(
+        `Auth init: cleanup failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`
+      )
+    }
 
     logger.log('Auth init', { autoSyncKiroCli: !!this.config.auto_sync_kiro_cli })
     if (this.config.auto_sync_kiro_cli) {
@@ -84,7 +96,7 @@ export class AuthHandler {
 
   private logUsageSummary(showToast?: ToastFunction): void {
     if (!this.accountManager) return
-    const accounts = this.accountManager.getAccounts()
+    const accounts = this.accountManager.getAccounts().filter((a: any) => a.isHealthy)
     if (!accounts.length) return
 
     for (const acc of accounts) {

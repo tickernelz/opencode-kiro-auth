@@ -12,7 +12,9 @@ const XHIGH_MODELS = [
   'claude-opus-4-7-thinking',
   'claude-opus-4-8-thinking',
   'claude-opus-5-thinking',
-  'claude-sonnet-5-thinking'
+  'claude-opus-5-5-thinking',
+  'claude-sonnet-5-thinking',
+  'claude-sonnet-5-5-thinking'
 ]
 
 describe('model registry', () => {
@@ -30,16 +32,19 @@ describe('model registry', () => {
         'claude-opus-4-7-thinking',
         'claude-opus-4-8-thinking',
         'claude-opus-5-thinking',
-        'claude-sonnet-4-5-thinking',
+        'claude-opus-5-5-thinking',
         'claude-sonnet-4-6-thinking',
-        'claude-sonnet-5-thinking'
+        'claude-sonnet-5-thinking',
+        'claude-sonnet-5-5-thinking'
       ].sort()
     )
   })
 
-  test('does not advertise Kiro GPT tiers, which use a different reasoning contract', () => {
-    for (const id of Object.keys(registry)) {
-      expect(id.startsWith('gpt-')).toBe(false)
+  test('advertises Kiro GPT-5.6 tiers without a thinking companion', () => {
+    const gptIDs = Object.keys(registry).filter((id) => id.startsWith('gpt-'))
+    expect(gptIDs.sort()).toEqual(['gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra'].sort())
+    for (const id of gptIDs) {
+      expect(registry[`${id}-thinking`]).toBeUndefined()
     }
   })
 

@@ -107,7 +107,7 @@ function createHarness() {
     profileArn: undefined,
     conversationId: 'conversation-1',
     streaming: false,
-    effectiveModel: 'claude-sonnet-4-5'
+    effectiveModel: 'claude-sonnet-4-6'
   })
 
   return { handler, getForceRefreshCalls: () => forceRefreshCalls }
@@ -115,7 +115,7 @@ function createHarness() {
 
 function request(handler: any) {
   return handler.handle(
-    'https://q.us-east-1.amazonaws.com/models/claude-sonnet-4-5',
+    'https://q.us-east-1.amazonaws.com/models/claude-sonnet-4-6',
     { body: '{}' },
     () => {}
   )

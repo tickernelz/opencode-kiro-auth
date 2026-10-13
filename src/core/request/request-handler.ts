@@ -128,6 +128,11 @@ export class RequestHandler {
       const tokenResult = await this.tokenRefresher.refreshIfNeeded(acc, auth, showToast)
       if (tokenResult.shouldContinue) {
         acc = tokenResult.account
+        // If the token was recovered cleanly from CLI sync, reset the retry
+        // counter so the idle-overnight scenario doesn't hit max iterations.
+        if (tokenResult.tokenRecovered) {
+          this.retryStrategy.resetContext(retryContext)
+        }
         await this.sleep(500)
         continue
       }

@@ -67,7 +67,7 @@ export const KiroConfigSchema = z.object({
 
   rate_limit_max_retries: z.number().min(0).max(10).default(3),
 
-  max_request_iterations: z.number().min(5).max(1000).default(20),
+  max_request_iterations: z.number().min(5).max(1000).default(30),
 
   request_timeout_ms: z.number().min(30000).max(600000).default(120000),
 
@@ -112,7 +112,7 @@ export const DEFAULT_CONFIG: KiroConfig = {
   default_region: 'us-east-1',
   rate_limit_retry_delay_ms: 5000,
   rate_limit_max_retries: 3,
-  max_request_iterations: 20,
+  max_request_iterations: 30,
   request_timeout_ms: 120000,
   token_expiry_buffer_ms: 300000,
   usage_sync_max_retries: 3,
