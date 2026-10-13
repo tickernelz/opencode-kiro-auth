@@ -30,8 +30,9 @@ const XHIGH_CAPABLE_MODELS = new Set([
   'claude-opus-4.7',
   'claude-opus-4.8',
   'claude-opus-5',
+  'claude-opus-5.5',
   'claude-sonnet-5',
-  'claude-sonnet-5-1m'
+  'claude-sonnet-5.5'
 ])
 
 /**
@@ -41,11 +42,7 @@ const XHIGH_CAPABLE_MODELS = new Set([
 const EFFORT_CAPABLE_MODELS = new Set([
   'claude-opus-4.5',
   'claude-opus-4.6',
-  'claude-opus-4.6-1m',
-  'claude-sonnet-4.5',
-  'claude-sonnet-4.5-1m',
   'claude-sonnet-4.6',
-  'claude-sonnet-4.6-1m',
   ...XHIGH_CAPABLE_MODELS
 ])
 

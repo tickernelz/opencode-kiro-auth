@@ -9,6 +9,8 @@ export function isPermanentError(reason?: string): boolean {
     reason.includes('ExpiredClientException') ||
     reason.includes('Client is expired') ||
     reason.includes('HTTP_401') ||
-    reason.includes('Account Suspended')
+    reason.includes('Account Suspended') ||
+    reason.includes('invalid_client') ||
+    reason.includes('Invalid client ID provided')
   )
 }

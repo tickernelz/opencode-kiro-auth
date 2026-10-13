@@ -3,7 +3,7 @@ interface RetryConfig {
   request_timeout_ms: number
 }
 
-interface RetryContext {
+export interface RetryContext {
   iterations: number
   startTime: number
 }
@@ -36,5 +36,15 @@ export class RetryStrategy {
       iterations: 0,
       startTime: Date.now()
     }
+  }
+
+  /**
+   * Reset the context after a successful token recovery so that token-refresh
+   * cycles don't consume request iterations. Call this whenever the loop
+   * must continue but no actual API attempt was made (e.g. CLI sync recovery).
+   */
+  resetContext(context: RetryContext): void {
+    context.iterations = 0
+    context.startTime = Date.now()
   }
 }
