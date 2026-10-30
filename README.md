@@ -29,7 +29,18 @@ models with substantial trial quotas.
 
 ## Installation
 
-Add the plugin to your `opencode.json` or `opencode.jsonc`:
+The same package works on OpenCode V1 (1.18.29 or newer) and OpenCode V2. Add it
+to your `opencode.json` or `opencode.jsonc`.
+
+OpenCode V2:
+
+```json
+{
+  "plugins": ["@zhafron/opencode-kiro-auth"]
+}
+```
+
+OpenCode V1:
 
 ```json
 {
@@ -37,13 +48,32 @@ Add the plugin to your `opencode.json` or `opencode.jsonc`:
 }
 ```
 
+V2 also accepts the V1 `plugin` key, so an existing config keeps working after
+upgrading OpenCode.
+
 That is the whole configuration. The plugin registers the `kiro` provider and
 advertises every model Kiro exposes, including a `-thinking` companion for each
 model that supports reasoning effort. Run `/models` to pick one.
 
-Defining `provider.kiro.models` yourself replaces the plugin's registry entirely.
-Only do that to rename or restrict models, and see the reasoning flags below if
-any of them are `-thinking` models.
+### OpenCode V2 differences
+
+- Pick a thinking level with the model reference, e.g.
+  `kiro/claude-opus-5-thinking#xhigh`, or cycle variants in the UI.
+- The `reasoning` / `interleaved` flags described below are V1-only. V2 ignores
+  them and renders Kiro's reasoning without any model flags.
+- V2 server plugins cannot show toasts. Usage summaries and re-authentication
+  notices go to `~/.config/opencode/kiro-logs/plugin.log` instead.
+- Automatic re-authentication from inside a request is V1-only. On V2, run
+  `opencode auth login kiro` (or `kiro-cli login`) when the plugin reports that
+  all accounts need re-authentication.
+- Leave `npm` / `package` out of any `provider.kiro` entry. On V2 the plugin
+  pins its own package per model, but older docs suggested setting `npm`, and
+  you no longer need it on either version.
+
+On V1, defining `provider.kiro.models` yourself replaces the plugin's registry
+entirely. Only do that to rename or restrict models, and see the reasoning flags
+below if any of them are `-thinking` models. On V2, models you define are merged
+onto the plugin's registry instead.
 
 ### Thinking Effort Configuration
 
@@ -69,6 +99,23 @@ reasoning chunk and no thinking block appears.
 If you override `provider.kiro.models` in your own config, you replace the
 plugin's registry wholesale — copy both fields onto any `-thinking` model you
 define, or reasoning will stop rendering.
+
+On OpenCode V2, a native `providers.kiro.models` override needs no reasoning
+flags. Put the budget in each variant's `settings`:
+
+```json
+{
+  "providers": {
+    "kiro": {
+      "models": {
+        "claude-opus-5-thinking": {
+          "variants": [{ "id": "high", "settings": { "thinkingConfig": { "thinkingBudget": 65536 } } }]
+        }
+      }
+    }
+  }
+}
+```
 
 Reasoning itself comes from the API: Kiro streams `reasoningContentEvent` on
 thinking models, and the plugin forwards each one as a `reasoning_content` delta.
