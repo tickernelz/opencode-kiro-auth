@@ -88,7 +88,8 @@ reachable from a budget alone:
 | `<= 98304` | `xhigh` |
 | `> 98304` | `max` |
 
-`xhigh` is only available on opus-4.7, opus-4.8, opus-5 and sonnet-5. Those models
+`xhigh` is only available on opus-4.7, opus-4.8, opus-5, opus-5.5, sonnet-5 and
+sonnet-5.5. Those models
 get a five-variant ladder; the rest get four, and a budget in the `xhigh` band is
 clamped to `max`.
 

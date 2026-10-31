@@ -53,6 +53,8 @@ export const MODEL_MAPPING: Record<string, string> = {
   // Claude Haiku
   'claude-haiku-4-5': 'claude-haiku-4.5',
   'claude-haiku-4-5-thinking': 'claude-haiku-4.5',
+  'claude-haiku-5-5': 'claude-haiku-5.5',
+  'claude-haiku-5-5-thinking': 'claude-haiku-5.5',
   // Claude Sonnet
   'claude-sonnet-4': 'claude-sonnet-4',
   'claude-sonnet-4-5': 'claude-sonnet-4.5',
@@ -67,6 +69,10 @@ export const MODEL_MAPPING: Record<string, string> = {
   'claude-sonnet-5-thinking': 'claude-sonnet-5',
   'claude-sonnet-5-1m': 'claude-sonnet-5-1m',
   'claude-sonnet-5-1m-thinking': 'claude-sonnet-5-1m',
+  'claude-sonnet-5-5': 'claude-sonnet-5.5',
+  'claude-sonnet-5-5-thinking': 'claude-sonnet-5.5',
+  'claude-sonnet-5-5-1m': 'claude-sonnet-5.5-1m',
+  'claude-sonnet-5-5-1m-thinking': 'claude-sonnet-5.5-1m',
   // Claude Opus
   'claude-opus-4-5': 'claude-opus-4.5',
   'claude-opus-4-5-thinking': 'claude-opus-4.5',
@@ -80,6 +86,8 @@ export const MODEL_MAPPING: Record<string, string> = {
   'claude-opus-4-8-thinking': 'claude-opus-4.8',
   'claude-opus-5': 'claude-opus-5',
   'claude-opus-5-thinking': 'claude-opus-5',
+  'claude-opus-5-5': 'claude-opus-5.5',
+  'claude-opus-5-5-thinking': 'claude-opus-5.5',
   // Auto
   auto: 'auto',
   // Open weight models

@@ -12,7 +12,9 @@ const XHIGH_MODELS = [
   'claude-opus-4-7-thinking',
   'claude-opus-4-8-thinking',
   'claude-opus-5-thinking',
-  'claude-sonnet-5-thinking'
+  'claude-opus-5-5-thinking',
+  'claude-sonnet-5-thinking',
+  'claude-sonnet-5-5-thinking'
 ]
 
 describe('model registry', () => {
@@ -30,9 +32,11 @@ describe('model registry', () => {
         'claude-opus-4-7-thinking',
         'claude-opus-4-8-thinking',
         'claude-opus-5-thinking',
+        'claude-opus-5-5-thinking',
         'claude-sonnet-4-5-thinking',
         'claude-sonnet-4-6-thinking',
-        'claude-sonnet-5-thinking'
+        'claude-sonnet-5-thinking',
+        'claude-sonnet-5-5-thinking'
       ].sort()
     )
   })
@@ -99,5 +103,14 @@ describe('model registry', () => {
     expect(registry['claude-opus-5-thinking'].modalities).toEqual(
       registry['claude-opus-5'].modalities
     )
+  })
+
+  test('advertises the 5.5 generation', () => {
+    expect(registry['claude-opus-5-5'].limit).toEqual({ context: 1000000, output: 64000 })
+    expect(registry['claude-sonnet-5-5'].limit).toEqual({ context: 1000000, output: 64000 })
+    // Unlike haiku-4.5, haiku-5.5 has a 1M context window
+    expect(registry['claude-haiku-5-5'].limit).toEqual({ context: 1000000, output: 64000 })
+    expect(registry['claude-haiku-5-5'].modalities).toEqual(registry['claude-haiku-4-5'].modalities)
+    expect(registry['claude-haiku-5-5-thinking']).toBeUndefined()
   })
 })

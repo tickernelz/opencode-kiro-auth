@@ -24,14 +24,17 @@ export const THINKING_BUDGETS: Readonly<Record<Effort, number>> = {
 
 /**
  * Models that support the 5-value effort enum (including xhigh).
- * Per Kiro's effort docs, this is opus-4.7/4.8/5 and sonnet-5.
+ * Per Kiro's effort docs, this is opus-4.7/4.8/5/5.5 and sonnet-5/5.5.
  */
 const XHIGH_CAPABLE_MODELS = new Set([
   'claude-opus-4.7',
   'claude-opus-4.8',
   'claude-opus-5',
+  'claude-opus-5.5',
   'claude-sonnet-5',
-  'claude-sonnet-5-1m'
+  'claude-sonnet-5-1m',
+  'claude-sonnet-5.5',
+  'claude-sonnet-5.5-1m'
 ])
 
 /**

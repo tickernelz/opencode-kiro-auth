@@ -66,12 +66,25 @@ const MODEL_SPECS: Record<string, ModelSpec> = {
     modalities: MULTIMODAL,
     thinking: true
   },
+  'claude-sonnet-5-5': {
+    name: 'Claude Sonnet 5.5',
+    rate: '1.3x',
+    limit: CONTEXT_1M,
+    modalities: MULTIMODAL,
+    thinking: true
+  },
 
   // Claude Haiku
   'claude-haiku-4-5': {
     name: 'Claude Haiku 4.5',
     rate: '0.4x',
     limit: CONTEXT_200K,
+    modalities: TEXT_IMAGE
+  },
+  'claude-haiku-5-5': {
+    name: 'Claude Haiku 5.5',
+    rate: '0.4x',
+    limit: CONTEXT_1M,
     modalities: TEXT_IMAGE
   },
 
@@ -107,6 +120,13 @@ const MODEL_SPECS: Record<string, ModelSpec> = {
   'claude-opus-5': {
     name: 'Claude Opus 5',
     rate: '2.2x',
+    limit: CONTEXT_1M,
+    modalities: MULTIMODAL,
+    thinking: true
+  },
+  'claude-opus-5-5': {
+    name: 'Claude Opus 5.5',
+    rate: '2.0x',
     limit: CONTEXT_1M,
     modalities: MULTIMODAL,
     thinking: true
