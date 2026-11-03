@@ -27,11 +27,13 @@ describe('model registry', () => {
       [
         'claude-opus-4-5-thinking',
         'claude-opus-4-6-thinking',
+        'claude-opus-4-6-1m-thinking',
         'claude-opus-4-7-thinking',
         'claude-opus-4-8-thinking',
         'claude-opus-5-thinking',
         'claude-sonnet-4-5-thinking',
         'claude-sonnet-4-6-thinking',
+        'claude-sonnet-4-6-1m-thinking',
         'claude-sonnet-5-thinking'
       ].sort()
     )
@@ -94,10 +96,20 @@ describe('model registry', () => {
   })
 
   test('carries limit and modalities through to both entries', () => {
-    expect(registry['claude-opus-5'].limit).toEqual({ context: 1000000, output: 64000 })
+    // 5.x is advertised as 1M but the service caps it at 600K (measured 2026-11-03).
+    expect(registry['claude-opus-5'].limit).toEqual({ context: 600000, output: 64000 })
     expect(registry['claude-opus-5-thinking'].limit).toEqual(registry['claude-opus-5'].limit)
     expect(registry['claude-opus-5-thinking'].modalities).toEqual(
       registry['claude-opus-5'].modalities
     )
+  })
+
+  test('advertises the measured served window per model family', () => {
+    expect(registry['claude-sonnet-4-5'].limit.context).toBe(200000)
+    expect(registry['claude-opus-4-6'].limit.context).toBe(1000000)
+    expect(registry['claude-opus-4-6-1m'].limit.context).toBe(1000000)
+    expect(registry['claude-opus-4-7'].limit.context).toBe(600000)
+    expect(registry['claude-opus-4-8'].limit.context).toBe(600000)
+    expect(registry['auto'].limit.context).toBe(600000)
   })
 })
