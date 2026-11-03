@@ -1,4 +1,5 @@
-import { MODEL_MAPPING, SUPPORTED_MODELS, isLongContextModel } from '../constants'
+import { MODEL_MAPPING, SUPPORTED_MODELS } from '../constants'
+import { getModelContextWindow } from './context-windows.js'
 
 export function resolveKiroModel(model: string): string {
   const resolved = MODEL_MAPPING[model]
@@ -8,6 +9,13 @@ export function resolveKiroModel(model: string): string {
   return resolved
 }
 
+/**
+ * Input-token window Kiro serves for this model.
+ *
+ * Delegates to the measured table in `context-windows.ts`; the old
+ * `-1m`-suffix heuristic returned 200K for the 5.x models, which are actually
+ * served at 600K, so every reported token count was ~2.75x too low.
+ */
 export function getContextWindowSize(model: string): number {
-  return isLongContextModel(model) ? 1000000 : 200000
+  return getModelContextWindow(model)
 }
