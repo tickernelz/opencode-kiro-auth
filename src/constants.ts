@@ -1,3 +1,5 @@
+import { createHash } from 'crypto'
+import { hostname } from 'os'
 import { RegionSchema } from './plugin/config/schema'
 import type { KiroRegion } from './plugin/types'
 
@@ -35,6 +37,11 @@ export function extractRegionFromArn(arn: string | undefined): KiroRegion | unde
   return isValidRegion(region) ? (region as KiroRegion) : undefined
 }
 
+// Kiro rejects clients that do not report a supported IDE version
+// (UnsupportedClientVersionException, enforced since 2026-11-09, kirodotdev/Kiro#11335).
+// KIRO_IDE_VERSION lets users follow the next minimum-version bump without a release.
+export const KIRO_IDE_VERSION = process.env.KIRO_IDE_VERSION?.trim() || '1.4.178'
+
 export const KIRO_CONSTANTS = {
   REFRESH_URL: 'https://prod.{{region}}.auth.desktop.kiro.dev/refreshToken',
   REFRESH_IDC_URL: 'https://oidc.{{region}}.amazonaws.com/token',
@@ -42,7 +49,7 @@ export const KIRO_CONSTANTS = {
   USAGE_LIMITS_URL: 'https://q.{{region}}.amazonaws.com/getUsageLimits',
   DEFAULT_REGION: 'us-east-1' as KiroRegion,
   AXIOS_TIMEOUT: 120000,
-  USER_AGENT: 'KiroIDE',
+  USER_AGENT: `KiroIDE-${KIRO_IDE_VERSION}`,
   SDK_VERSION: '3.738.0',
   SDK_VERSION_USAGE: '3.0.0',
   CHAT_TRIGGER_TYPE_MANUAL: 'MANUAL',
@@ -116,4 +123,13 @@ export const KIRO_AUTH_SERVICE = {
     'codewhisperer:transformations',
     'codewhisperer:taskassist'
   ]
+}
+
+/**
+ * Client id in the same shape the Kiro IDE sends: `KiroIDE-<version>-<machineId>`.
+ * The machine id is a stable, non-reversible hash of the hostname.
+ */
+export function getKiroClientId(): string {
+  const machineId = createHash('sha256').update(hostname()).digest('hex')
+  return `${KIRO_CONSTANTS.USER_AGENT}-${machineId}`
 }
