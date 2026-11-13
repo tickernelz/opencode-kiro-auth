@@ -150,6 +150,17 @@ npm run build
 
 ## Troubleshooting
 
+### Error: Status: 400 (UnsupportedClientVersionException / This version of Kiro is no longer supported)
+
+Kiro rejects clients that report an outdated IDE version. The plugin identifies
+itself as a recent Kiro IDE (`KiroIDE-<version>`). If Kiro raises the minimum
+version again before a plugin release, override it with the latest version from
+the [Kiro IDE changelog](https://kiro.dev/changelog/ide/):
+
+```bash
+export KIRO_IDE_VERSION=1.4.178
+```
+
 ### Error: Status: 403 (AccessDeniedException / User is not authorized)
 
 If you're using **IAM Identity Center** (a custom Start URL), the Q Developer /
